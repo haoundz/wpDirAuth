@@ -118,6 +118,15 @@ wpDirAuth welcomes friendly contributors wanting to lend a hand, be it in
 the form of code through SVN patches, user support, platform portability
 testing, security consulting, localization help, etc.
 
+The [current] goal is to keep the plugin self-contained (ie: no 3rd-party lib)
+for easier security maintenance, while keeping the code clean and extensible.
+
+Focus is on security, features, security, and let's not forget, security.
+Unit tests will hopefully be developed and constant security audit performed.
+
+Recurring quality patch contributions will lead to commit privileges to the
+project source repository.
+
 A Google Group has been setup to serve as a collaboration channel.
 
 * <http://groups.google.com/group/wpdirauth-dev>
@@ -128,18 +137,20 @@ The project source code is available on the WordPress Plugin Repository:
 * Unstable:   <http://svn.wp-plugins.org/wpdirauth/branches/dev/>
 * Historical: <http://svn.wp-plugins.org/wpdirauth/tags/>
 
-The generated code documentation can be found at the following location:
+The Sybversion repository can be browsed and tracked (RSS, etc) through the
+WP Plugin Repo source browser at:
+
+* <http://dev.wp-plugins.org/browser/wpdirauth/>
+
+The generated code documentation can be found at:
 
 * <http://labs.tekartist.org/wordpress/wpdirauth/phpdocs/>
 
-The [current] goal is to keep the plugin self-contained (ie: no 3rd-party lib)
-for easier security maintenance, while keeping the code clean and extensible.
+The WP Plugin Repo also offers a convenient ticketing system for bug and
+task tracking.
 
-Focus is on security, features, security, and let's not forget, security.
-Unit tests will hopefully be developed and constant security audit performed.
-
-Recurring quality patch contributions will lead to commit privileges to the
-project source repository.
+* Existing tickets:  <http://dev.wp-plugins.org/query?status=new&status=assigned&status=reopened&group=priority&component=wpdirauth&order=priority>
+* Open a new ticket: <http://dev.wp-plugins.org/newticket>
 
 
 == License ==
