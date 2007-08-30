@@ -300,10 +300,20 @@ else {
             /**
              * Attempt bind, both anonymously or with credentials (see cases)
              */ 
-            if ( ($isBound = @ldap_bind($connection)) === true ) {
+            if ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
                 /**
-                 * Use case 1: Servers that let you bind anonymously, but might
-                 * then require a full user DN to actually login.
+                 * Use case 1: Servers that will not let you bind anonymously
+                 * altogether.
+                 * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/8fd16c05266fc832
+                 * @see wpDirAuth_bindTest
+                 */
+                $isLoggedIn = true;
+                break;
+            }
+            elseif ( ($isBound = @ldap_bind($connection)) === true ) {
+                /**
+                 * Use case 2: Servers that might require a full user DN to
+                 * actually login and therefore let you bind anonymously first .
                  * Try ldap_search + ldap_get_dn before attempting a login.
                  * @see http://wordpress.org/support/topic/129814?replies=34#post-603644
                  */
@@ -312,16 +322,6 @@ else {
                         $username = $userDn;
                     }
                 }
-                break;
-            }
-            elseif ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
-                /**
-                 * Use case 2: Servers that will not let you bind anonymously
-                 * altogether.
-                 * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/8fd16c05266fc832
-                 * @see wpDirAuth_bindTest
-                 */
-                $isLoggedIn = true;
                 break;
             }
         }
