@@ -208,6 +208,26 @@ else {
         update_option("dirAuthCookieMarker",$cookieMarker);
         return $cookieMarker;
     }
+    
+    
+    /**
+     * LDAP bind test
+     * Tries two different documented method of php-based ldap binding.
+     * Note: passing params by reference, no need for copies (unlike in
+     * wpDirAuth_auth where it is desirable).
+     * 
+     * @param object $$connection LDAP connection
+     * @param string $username LDAP username
+     * @param string $password LDAP password
+     * @return boolean Binding status
+     *      */
+    function wpDirAuth_bindTest(&$connection, &$username, &$password)
+    {
+        if ( ($isBound = @ldap_bind($connection, $username, $password)) === false ) {
+            $isBound = @ldap_bind($connection,"uid=$username,$baseDn", $password);
+        }
+        return $isBound;
+    }
 
     
     /**
@@ -218,12 +238,15 @@ else {
      * @param string $username LDAP username
      * @param string $password LDAP password
      * @return boolean false OR array Directory email, last_name and first_name
+     * 
+     * @uses WPDIRAUTH_DEFAULT_FILTER
+     * @uses wpDirAuth_bindTest
      */
-    function wpDirAuth_auth($username,$password)
+    function wpDirAuth_auth($username, $password)
     {
         global $error, $pwd;
         
-        $errorTitle = __('Directory Login Error</strong> ');
+        $errorTitle = '<strong>'.__('Directory Login Error').'</strong>: ';
         
         $controllers      = explode(',', get_option('dirAuthControllers'));
         $baseDn           = get_option('dirAuthBaseDn');
@@ -233,7 +256,7 @@ else {
         
         $returnKeys = array('sn', 'givenname', 'mail');
     
-        $bind = false;
+        $isBound = $isLoggedIn = false;
         
         if (count($controllers) > 1) {
             // shuffle the domain controllers for pseudo load balancing and fault tolerance.
@@ -273,25 +296,42 @@ else {
             if (@ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3)) {
                 @ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
             }
-            // Attempt bind
-            if (($bind = @ldap_bind($connection)) !== false) {
-                // Try to get user's dn anonymously for full dn binding.
-                if ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) {
-                    if ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) {
+            /**
+             * Attempt bind, both anonymously or with credentials (see cases)
+             */ 
+            if ( ($isBound = @ldap_bind($connection)) === true ) {
+                /**
+                 * Use case 1: Servers that let you bind anonymously, but might
+                 * then require a full user DN to actually login.
+                 * Try ldap_search + ldap_get_dn before attempting a login.
+                 * @see http://wordpress.org/support/topic/129814?replies=34#post-603644
+                 */
+                if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
+                    if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
                         $username = $userDn;
                     }
                 }
                 break;
             }
+            elseif ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+                /**
+                 * Use case 2: Servers that will not let you bind anonymously
+                 * altogether.
+                 * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/8fd16c05266fc832
+                 * @see wpDirAuth_bindTest
+                 */
+                $isLoggedIn = true;
+                break;
+            }
         }
         
-        if ($bind === false) {
+        if (!$isBound) {
             $error = $errorTitle
                    . __(' No directory server available for authentication.');
             $pwd = '';
             return false;
         }
-        elseif (($bind = @ldap_bind($connection, $username, $password)) === false) {
+        elseif ( ($isLoggedIn === false) && (wpDirAuth_bindTest($connection, $username, $password) === false) ) {
             $error = $errorTitle
                    . __(' Could not authenticate user. Please check your credentials.')
                    . " [$username]";
@@ -299,7 +339,11 @@ else {
             return false;
         }
         else {
-            // Search for profile, if still needed (ie: if anonymous pre-binding failed)
+            /**
+             * Search for profile, if still needed.
+             * @see Preceding loop: Use case 1 with anonymous ldap_search
+             *      failure or use case 2 and 3 in loop above)
+             */
             if (!$results) $results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys);
             
             $userInfo = @ldap_get_entries($connection, $results);
