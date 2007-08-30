@@ -216,7 +216,7 @@ else {
      * Note: passing params by reference, no need for copies (unlike in
      * wpDirAuth_auth where it is desirable).
      * 
-     * @param object $$connection LDAP connection
+     * @param object $connection LDAP connection
      * @param string $username LDAP username
      * @param string $password LDAP password
      * @return boolean Binding status
@@ -224,6 +224,7 @@ else {
     function wpDirAuth_bindTest(&$connection, &$username, &$password)
     {
         if ( ($isBound = @ldap_bind($connection, $username, $password)) === false ) {
+            // @see wpLDAP comment at http://ashay.org/?page_id=133#comment-558
             $isBound = @ldap_bind($connection,"uid=$username,$baseDn", $password);
         }
         return $isBound;
