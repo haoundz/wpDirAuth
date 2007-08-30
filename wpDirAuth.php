@@ -332,7 +332,7 @@ else {
             $pwd = '';
             return false;
         }
-        elseif ( ($isLoggedIn === false) && (wpDirAuth_bindTest($connection, $username, $password) === false) ) {
+        elseif ( ($isLoggedIn === false) && ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === false ) ) {
             $error = $errorTitle
                    . __(' Could not authenticate user. Please check your credentials.')
                    . " [$username]";
