@@ -764,10 +764,12 @@ ________EOS;
             if (!$loginScreenMsg) $loginScreenMsg = __(sprintf(
                 WPDIRAUTH_DEFAULT_LOGINSCREENMSG,
                 get_option('dirAuthInstitution')
-            ));;
+            ));
             
-            
-            echo $loginScreenMsg;
+            echo '
+            	<style>.wpDirAuthMsg a, .wpDirAuthMsg a:visited {color: #ebcd4e;}</style>
+            	<p class="wpDirAuthMsg">'.$loginScreenMsg.'</p>
+            ';
         }
     }
     
