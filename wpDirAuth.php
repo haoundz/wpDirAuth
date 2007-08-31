@@ -880,7 +880,7 @@ ________EOS;
         
         /**
          * Get the login object. We will use it for first user insertion or when the 
-         * directory aith option is not activated.
+         * directory auth option is not activated.
          */
         $login = get_userdatabylogin($username);
         $loginUserIsDirUser = ($login) ? get_usermeta($login->ID, 'wpDirAuthFlag') : 0;
@@ -977,9 +977,10 @@ ________EOS;
                     /*
                      * Did not pass dir auth, and no login present in WP
                      */
-                    $error = __('<strong>Login Error</strong>:
-                                Could not authenticate user in either WordPress
-                                or the directory. Please check credentials.');
+                    if (!$error) $error = __('<strong>Login Error</strong>:
+                                              Could not authenticate user in
+                                              either WordPress or the directory.
+                                              Please check credentials.');
                     $pwd = '';
                     return false;
                 }
