@@ -728,18 +728,20 @@ ________EOS;
             }
             
             if (get_option('dirAuthRequireSsl') && (!preg_match('|^https|',$selfURL))) {
+                $refreshJS   = '<script type="text/javascript">'."\n".'top.location.href=\''.$location.'\';'."\n".'</script>" />';
                 $refreshMeta = '<meta http-equiv="refresh" content="0;url='.$location.'" />';
-                $refreshMsg = 'Please access the <a href="'.$location.'">encrypted version</a> of this page.';
+                $refreshMsg  = 'Please access the <a href="'.$location.'">encrypted version</a> of this page.';
                 
-                if (@ob_end_clean()) {
-                    $location = str_replace('http://','https://',$selfURL);
-                    if ( (@header('Location:'.$location)) == false) {
-                        echo '<html><head>'.$refreshMeta.'</head>'
-                           . '<body>'.$refreshMsg.'</body></html>';
-                    }
+                if (headers_sent()) {
+                        echo $refreshJS.$refreshMeta.'<p>'.$refreshMsg.'</p></form></div></html>';
                 }
                 else {
-                        echo $refreshMeta.'<p>'.$refreshMsg.'</p></form></div></html>';
+                    @ob_end_clean();
+                    $location = str_replace('http://','https://',$selfURL);
+                    if (!@header('Location:'.$location)) {
+                        echo '<html><head>'.$refreshJS.$refreshMeta.'</head>'
+                           . '<body>'.$refreshMsg.'</body></html>';
+                    }
                 }
                 
                 exit;
