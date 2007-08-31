@@ -347,40 +347,50 @@ else {
              */
             if (!$results) $results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys);
             
-            $userInfo = @ldap_get_entries($connection, $results);
-            
-            $count = intval($userInfo['count']);
-            if ($count < 1) {
+            if (!$results) {
                 $error = $errorTitle
                        . __('Directory authentication initially succeeded, but no
-                             valid profile was found.')
+                             valid profile was found (search procedure).')
                        ." [$filter]";
                 $pwd = '';
                 return false;
             }
-            elseif ($count > 1) {
-                $error = $errorTitle
-                       . __('Directory authentication initially succeeded, but the
-                             username you sent is not a unique profile identifier.')
-                       . " [$filter]";
-                $pwd = '';
-                return false;
-            }
-            else {
-                $email     = isset($userInfo[0]['mail'][0])
-                           ? $userInfo[0]['mail'][0] : '';
+            else{
+                $userInfo = @ldap_get_entries($connection, $results);
                 
-                $lastName  = isset($userInfo[0]['sn'][0])
-                           ? $userInfo[0]['sn'][0] : '';
-                
-                $firstName = isset($userInfo[0]['givenname'][0])
-                           ? $userInfo[0]['givenname'][0] : '';
-    
-                return array(
-                    'email'      => $email,
-                    'last_name'  => $lastName,
-                    'first_name' => $firstName
-                );
+                $count = intval($userInfo['count']);
+                if ($count < 1) {
+                    $error = $errorTitle
+                           . __('Directory authentication initially succeeded, but no
+                                 valid profile was found ("get entries" procedure).')
+                           ." [$filter]";
+                    $pwd = '';
+                    return false;
+                }
+                elseif ($count > 1) {
+                    $error = $errorTitle
+                           . __('Directory authentication initially succeeded, but the
+                                 username you sent is not a unique profile identifier.')
+                           . " [$filter]";
+                    $pwd = '';
+                    return false;
+                }
+                else {
+                    $email     = isset($userInfo[0]['mail'][0])
+                               ? $userInfo[0]['mail'][0] : '';
+                    
+                    $lastName  = isset($userInfo[0]['sn'][0])
+                               ? $userInfo[0]['sn'][0] : '';
+                    
+                    $firstName = isset($userInfo[0]['givenname'][0])
+                               ? $userInfo[0]['givenname'][0] : '';
+        
+                    return array(
+                        'email'      => $email,
+                        'last_name'  => $lastName,
+                        'first_name' => $firstName
+                    );
+                }
             }
         }
     }
