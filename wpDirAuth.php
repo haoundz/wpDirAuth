@@ -216,9 +216,9 @@ else {
      * Note: passing params by reference, no need for copies (unlike in
      * wpDirAuth_auth where it is desirable).
      * 
-     * @param object $connection LDAP connection
-     * @param string $username LDAP username
-     * @param string $password LDAP password
+     * @param object &$connection LDAP connection
+     * @param string &$username LDAP username
+     * @param string &$password LDAP password
      * @return boolean Binding status
      *      */
     function wpDirAuth_bindTest(&$connection, &$username, &$password)
