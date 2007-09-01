@@ -65,7 +65,7 @@ You can download the latest stable version of wpDirAuth from the WordPress
 Plugin Finder at the following locations:
 
 * Direct download: <http://downloads.wordpress.org/plugin/wpdirauth.zip>
-* WPPF home:       <http://wordpress.org/extend/plugins/wpdirauth/>
+* WPPF home:       <http://downloads.wordpress.org/plugin/wpdirauth/>
 
 You can find all historical releases archived at the following location:
 
