@@ -254,10 +254,16 @@ else {
         $accountSuffix    = get_option('dirAuthAccountSuffix');
         $filter           = get_option('dirAuthFilter');
         $enableSsl        = get_option('dirAuthEnableSsl');
+        $preBindUser      = get_option('dirAuthPreBindUser');
+        $preBindPassword  = get_option('dirAuthPreBindPassword');
+        
+        // DEBUG
+        $preBindUser = '';
+        $preBindPassword = '';
         
         $returnKeys = array('sn', 'givenname', 'mail');
     
-        $isBound = $isLoggedIn = false;
+        $isBound = $isPreBound = $isLoggedIn = false;
         
         if (count($controllers) > 1) {
             // shuffle the domain controllers for pseudo load balancing and fault tolerance.
@@ -285,9 +291,8 @@ else {
              * is because with php and openldap 2.x, the ldap_connect() will
              * always return a resource as it does not actually connect but just
              * initializes the connecting parameters. The actual connection happens
-             * with the following ldap_bind() which is itself wrapped in a
-             * conditional check.
-             * @see Notes at http://php.net/ldap_connect
+             * with ldap_bind() which is itself wrapped in a conditional check.
+             * @see Notes in return value definition at http://php.net/ldap_connect
              */
             $connection = @ldap_connect($protocol.'://'.$dc);
             /**
@@ -297,42 +302,60 @@ else {
             if (@ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3)) {
                 @ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
             }
-            /**
-             * Attempt bind, both anonymously or with credentials (see cases)
-             */ 
-            if ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+            
+            if ($preBindUser && $preBindPassword) {
                 /**
-                 * Use case 1: Servers that will not let you bind anonymously
-                 * altogether.
+                 * Use case 1: Servers requiring pre-binding with admin defined
+                 * credentials before actual user login.
+                 * @see http://dev.wp-plugins.org/ticket/681
+                 */
+                if ( $isPreBound = wpDirAuth_bindTest($connection, $preBindUser, $preBindPassword) === true ) {
+                    if ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+                        $isLoggedIn = true;
+                        break; // valid server, valid login, move on
+                    }
+                }
+            }
+            elseif ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+                /**
+                 * Use case 2: Servers that will not let you bind anonymously
+                 * but will let the end user bind directly.
                  * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/8fd16c05266fc832
-                 * @see wpDirAuth_bindTest
                  */
                 $isLoggedIn = true;
-                break;
+                break;  // valid server, valid login, move on
             }
             elseif ( ($isBound = @ldap_bind($connection)) === true ) {
                 /**
-                 * Use case 2: Servers that might require a full user DN to
+                 * Use case 3: Servers that might require a full user DN to
                  * actually login and therefore let you bind anonymously first .
                  * Try ldap_search + ldap_get_dn before attempting a login.
                  * @see http://wordpress.org/support/topic/129814?replies=34#post-603644
                  */
                 if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
                     if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
-                        $username = $userDn;
+                        if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
+                            $isLoggedIn = true; // valid server, valid login, move on
+                            break; // valid server, valid login, move on
+                        }
                     }
                 }
-                break;
             }
         }
         
-        if (!$isBound) {
+        if ( ($preBindUser && $preBindPassword) && ( ! $isPreBound ) ) {
             $error = $errorTitle
-                   . __(' No directory server available for authentication.');
+                   . __(' wpDirAuth config error: No directory server available for authentication, OR pre-binding credentials denied.');
             $pwd = '';
             return false;
         }
-        elseif ( ($isLoggedIn === false) && ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === false ) ) {
+        elseif ( ! $isBound) {
+            $error = $errorTitle
+                   . __(' wpDirAuth config error: No directory server available for authentication.');
+            $pwd = '';
+            return false;
+        }
+        elseif ( ! $isLoggedIn) {
             $error = $errorTitle
                    . __(' Could not authenticate user. Please check your credentials.')
                    . " [$username]";
@@ -342,8 +365,7 @@ else {
         else {
             /**
              * Search for profile, if still needed.
-             * @see Preceding loop: Use case 1 with anonymous ldap_search
-             *      failure or use case 2 and 3 in loop above)
+             * @see $results in preceding loop: Use case 3
              */
             if (!$results) $results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys);
             
