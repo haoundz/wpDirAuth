@@ -278,7 +278,11 @@ else {
         
         if ($accountSuffix) $username .= $accountSuffix;
     
-        $protocol = ($enableSsl) ? 'ldaps' : 'ldap';
+        /**
+         * Only setup protocol value if ldaps is required to help with older AD
+         * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/7b744c7ad66a4829
+         */
+        $protocol = ($enableSsl) ? 'ldaps://' : '';
         
         if (!$filter) $filter = WPDIRAUTH_DEFAULT_FILTER;
         
@@ -294,7 +298,7 @@ else {
              * with ldap_bind() which is itself wrapped in a conditional check.
              * @see Notes in return value definition at http://php.net/ldap_connect
              */
-            $connection = @ldap_connect($protocol.'://'.$dc);
+            $connection = @ldap_connect($protocol.$dc);
             /**
              * Copes with W2K3/AD issue.
              * @see http://bugs.php.net/bug.php?id=30670
