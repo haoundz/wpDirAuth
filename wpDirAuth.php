@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.0
+ * @version 1.1
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -60,7 +60,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.0
+Version: 1.1
 Author: Stephane Daury [and whoever wants to help]
 Author URI: http://stephane.daury.org/
 */
@@ -68,7 +68,7 @@ Author URI: http://stephane.daury.org/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.0');
+define('WPDIRAUTH_VERSION', '1.1');
 
 /**
  * wpDirAuth signature.
@@ -310,13 +310,18 @@ else {
             if ($preBindUser && $preBindPassword) {
                 /**
                  * Use case 1: Servers requiring pre-binding with admin defined
-                 * credentials before actual user login.
+                 * credentials to search for the user's full DN before attempting
+                 * to login.
                  * @see http://dev.wp-plugins.org/ticket/681
                  */
                 if ( $isPreBound = wpDirAuth_bindTest($connection, $preBindUser, $preBindPassword) === true ) {
-                    if ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
-                        $isLoggedIn = true;
-                        break; // valid server, valid login, move on
+                    if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
+                        if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
+                            if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
+                                $isLoggedIn = true; // valid server, valid login, move on
+                                break; // valid server, valid login, move on
+                            }
+                        }
                     }
                 }
             }
