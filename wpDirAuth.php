@@ -251,15 +251,11 @@ else {
         
         $controllers      = explode(',', get_option('dirAuthControllers'));
         $baseDn           = get_option('dirAuthBaseDn');
+        $preBindUser      = get_option('dirAuthPreBindUser');
+        $preBindPassword  = get_option('dirAuthPreBindPassword');
         $accountSuffix    = get_option('dirAuthAccountSuffix');
         $filter           = get_option('dirAuthFilter');
         $enableSsl        = get_option('dirAuthEnableSsl');
-        $preBindUser      = get_option('dirAuthPreBindUser');
-        $preBindPassword  = get_option('dirAuthPreBindPassword');
-        
-        // DEBUG
-        $preBindUser = '';
-        $preBindPassword = '';
         
         $returnKeys = array('sn', 'givenname', 'mail');
     
@@ -491,61 +487,77 @@ ____________EOS;
         
         if ($_POST) {
             // Booleans
-            $enable         = intval($_POST['dirAuthEnable'])      == 1 ? 1 : 0;
-            $enableSsl      = intval($_POST['dirAuthEnableSsl'])   == 1 ? 1 : 0;
-            $requireSsl     = intval($_POST['dirAuthRequireSsl'])  == 1 ? 1 : 0;
-            $TOS            = intval($_POST['dirAuthTOS'])         == 1 ? 1 : 0;
+            $enable           = intval($_POST['dirAuthEnable'])      == 1 ? 1 : 0;
+            $enableSsl        = intval($_POST['dirAuthEnableSsl'])   == 1 ? 1 : 0;
+            $requireSsl       = intval($_POST['dirAuthRequireSsl'])  == 1 ? 1 : 0;
+            $TOS              = intval($_POST['dirAuthTOS'])         == 1 ? 1 : 0;
 
             // Strings, no HTML
-            $controllers    = wpDirAuth_sanitize($_POST['dirAuthControllers']);
-            $baseDn         = wpDirAuth_sanitize($_POST['dirAuthBaseDn']);
-            $accountSuffix  = wpDirAuth_sanitize($_POST['dirAuthAccountSuffix']);
-            $filter         = wpDirAuth_sanitize($_POST['dirAuthFilter']);
-            $institution    = wpDirAuth_sanitize($_POST['dirAuthInstitution']);
+            $controllers      = wpDirAuth_sanitize($_POST['dirAuthControllers']);
+            $baseDn           = wpDirAuth_sanitize($_POST['dirAuthBaseDn']);
+            $preBindUser      = wpDirAuth_sanitize($_POST['dirAuthPreBindUser']);
+            $preBindPassword  = wpDirAuth_sanitize($_POST['dirAuthPreBindPassword']);
+            $preBindPassCheck = wpDirAuth_sanitize($_POST['dirAuthPreBindPassCheck']);
+            $accountSuffix    = wpDirAuth_sanitize($_POST['dirAuthAccountSuffix']);
+            $filter           = wpDirAuth_sanitize($_POST['dirAuthFilter']);
+            $institution      = wpDirAuth_sanitize($_POST['dirAuthInstitution']);
 
             // Have to be allowed to contain some HTML
-            $loginScreenMsg = wpDirAuth_sanitize($_POST['dirAuthLoginScreenMsg'], true);
-            $changePassMsg  = wpDirAuth_sanitize($_POST['dirAuthChangePassMsg'], true);
+            $loginScreenMsg   = wpDirAuth_sanitize($_POST['dirAuthLoginScreenMsg'], true);
+            $changePassMsg    = wpDirAuth_sanitize($_POST['dirAuthChangePassMsg'], true);
             
-            update_option('dirAuthEnable',         $enable);
-            update_option('dirAuthEnableSsl',      $enableSsl);
-            update_option('dirAuthRequireSsl',     $requireSsl);
-            update_option('dirAuthControllers',    $controllers);
-            update_option('dirAuthBaseDn',         $baseDn);
-            update_option('dirAuthAccountSuffix',  $accountSuffix);
-            update_option('dirAuthFilter',         $filter);
-            update_option('dirAuthInstitution',    $institution);
-            update_option('dirAuthLoginScreenMsg', $loginScreenMsg);
-            update_option('dirAuthChangePassMsg',  $changePassMsg);
-            update_option('dirAuthTOS',            $TOS);
+            update_option('dirAuthEnable',          $enable);
+            update_option('dirAuthEnableSsl',       $enableSsl);
+            update_option('dirAuthRequireSsl',      $requireSsl);
+            update_option('dirAuthControllers',     $controllers);
+            update_option('dirAuthBaseDn',          $baseDn);
+            update_option('dirAuthPreBindUser',     $preBindUser);
+            update_option('dirAuthAccountSuffix',   $accountSuffix);
+            update_option('dirAuthFilter',          $filter);
+            update_option('dirAuthInstitution',     $institution);
+            update_option('dirAuthLoginScreenMsg',  $loginScreenMsg);
+            update_option('dirAuthChangePassMsg',   $changePassMsg);
+            update_option('dirAuthTOS',             $TOS);
+            
+            // Only store/override the value if a new one is being sent a bind user is set.
+            if ( $preBindUser && $preBindPassword && ($preBindPassCheck == $preBindPassword) )
+                update_option('dirAuthPreBindPassword', $preBindPassword);
+            
+            // Clear the stored password if the Bind DN is null
+            elseif ( ! $preBindUser)
+                update_option('dirAuthPreBindPassword', '');
     
-            if (get_option('dirAuthEnable') && !get_option('dirAuthCookieMarker')) {
+            if (get_option('dirAuthEnable') && !get_option('dirAuthCookieMarker'))
                 wpDirAuth_makeCookieMarker();
-            }
             
             echo '<div id="message" class="updated fade"><p>Your new settings were saved successfully.</p></div>';
+            
+            // Be sure to clear $preBindPassword, not to be displayed onscreen or in source
+            unset($preBindPassword);
         }
         else {        
             // Booleans
-            $enable         = intval(get_option('dirAuthEnable'))     == 1 ? 1 : 0;
-            $enableSsl      = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
-            $requireSsl     = intval(get_option('dirAuthRequireSsl')) == 1 ? 1 : 0;
-            $TOS            = intval(get_option('dirAuthTOS'))        == 1 ? 1 : 0;
+            $enable          = intval(get_option('dirAuthEnable'))     == 1 ? 1 : 0;
+            $enableSsl       = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
+            $requireSsl      = intval(get_option('dirAuthRequireSsl')) == 1 ? 1 : 0;
+            $TOS             = intval(get_option('dirAuthTOS'))        == 1 ? 1 : 0;
             
             // Strings, no HTML
-            $controllers    = wpDirAuth_sanitize(get_option('dirAuthControllers'));
-            $baseDn         = wpDirAuth_sanitize(get_option('dirAuthBaseDn'));
-            $accountSuffix  = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
-            $filter         = wpDirAuth_sanitize(get_option('dirAuthFilter'));
-            $institution    = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
+            $controllers     = wpDirAuth_sanitize(get_option('dirAuthControllers'));
+            $baseDn          = wpDirAuth_sanitize(get_option('dirAuthBaseDn'));
+            $preBindUser     = wpDirAuth_sanitize(get_option('dirAuthPreBindUser'));
+            $accountSuffix   = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
+            $filter          = wpDirAuth_sanitize(get_option('dirAuthFilter'));
+            $institution     = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
             
             // Have to be allowed to contain some HTML
-            $loginScreenMsg = wpDirAuth_sanitize(get_option('dirAuthLoginScreenMsg'), true);
-            $changePassMsg  = wpDirAuth_sanitize(get_option('dirAuthChangePassMsg'), true);
+            $loginScreenMsg  = wpDirAuth_sanitize(get_option('dirAuthLoginScreenMsg'), true);
+            $changePassMsg   = wpDirAuth_sanitize(get_option('dirAuthChangePassMsg'), true);
         }
 
         $controllers    = htmlspecialchars($controllers);
         $baseDn         = htmlspecialchars($baseDn);
+        $preBindUser    = htmlspecialchars($preBindUser);
         $accountSuffix  = htmlspecialchars($accountSuffix);
         $filter         = htmlspecialchars($filter);
         $institution    = htmlspecialchars($institution);
@@ -610,8 +622,10 @@ ____________EOS;
                                 <input type="radio" name="dirAuthEnable" value="1" $tEnable /> Yes &nbsp;
                                 <input type="radio" name="dirAuthEnable" value="0" $fEnable /> No
                                 <br />
-                                <strong>NOTE</strong>: Users created in WordPress are not affected by your directory authentication settings.
-                            </li>
+                                <strong>Note 1</strong>: Users created in WordPress are not affected by your directory authentication settings.
+                                <br />
+                                <strong>Note 2</strong>: You will still be able to login with standard WP users if the LDAP server(s) go offline.
+                                </li>
                             <li>
                                 <label for="dirAuthRequireSsl"><strong>Require SSL Login?</strong></label>
                                 <br />
@@ -646,6 +660,30 @@ ____________EOS;
                                 <em>The base DN for carrying out LDAP searches.</em>
                             </li>
                             <li>
+                                <label for="dirAuthPreBindUser"><strong>Bind DN</strong></label>
+                                <br />
+                                <input type="text" name="dirAuthPreBindUser" value="$preBindUser" size="40"/><br />
+                                <em>Enter a valid user account/DN to pre-bind with IF your LDAP server does not allow anonymous profile searches, or requires a user with specific privileges to search.</em>
+                            </li>
+                            <li>
+                                <label for="dirAuthPreBindPassword"><strong>Bind Password</strong></label>
+                                <br />
+                                <input type="password" name="dirAuthPreBindPassword" value="" size="40"/><br />
+                                <em>
+                                    Enter a password for the above Bind DN if a value if needed.
+                                    <br />
+                                    <strong>Note</strong>: this value will be stored in clear text in your database.
+                                    <br />
+                                    Simply clear the Bind DN value if you wish to delete the stored password altogether.
+                                    </em>
+                            </li>
+                            <li>
+                                <label for="dirAuthPreBindPassCheck"><strong>Confirm Password</strong></label>
+                                <br />
+                                <input type="password" name="dirAuthPreBindPassCheck" value="" size="40"/><br />
+                                <em>Confirm the above Bind Password if you are setting a new value.</em>
+                            </li>
+                            <li>
                                 <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
                                 <br />
                                 <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
@@ -664,7 +702,7 @@ ____________EOS;
                             </li>
                         </ul>
                     </fieldset>
-                    <fieldset class="options">
+                        <fieldset class="options">
                         <legend>Branding Settings</legend>
                         <ul>
                             <li>
