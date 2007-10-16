@@ -654,6 +654,23 @@ ____________EOS;
                                 <em>The DNS name or IP address of the directory server(s). Separate multiple entries by a comma (,).</em>
                             </li>
                             <li>
+                                <label for="dirAuthFilter"><strong>Account Filter</strong></label>
+                                <br />
+                                <input type="text" name="dirAuthFilter" value="$filter" size="40"/>
+                                (Defaults to <em>$defaultFilter</em>) 
+                                <br />
+                                <em>What LDAP field should we search the username against to locate the user's profile after successful login?</em>
+                            </li>
+                            <li>
+                                <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
+                                <br />
+                                <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
+                                <em>
+                                    Suffix to be automatically appended to the username if desired. e.g. @domain.com<br />
+                                    <strong>NOTE:</strong> Changing this value will cause your existing directory users to have new accounts created the next time they login.
+                                </em>
+                            </li>
+                            <li>
                                 <label for="dirAuthBaseDn"><strong>Base DN</strong></label>
                                 <br />
                                 <input type="text" name="dirAuthBaseDn" value="$baseDn" size="40"/><br />
@@ -663,14 +680,14 @@ ____________EOS;
                                 <label for="dirAuthPreBindUser"><strong>Bind DN</strong></label>
                                 <br />
                                 <input type="text" name="dirAuthPreBindUser" value="$preBindUser" size="40"/><br />
-                                <em>Enter a valid user account/DN to pre-bind with IF your LDAP server does not allow anonymous profile searches, or requires a user with specific privileges to search.</em>
+                                <em>Enter a valid user account/DN to pre-bind with if your LDAP server does not allow anonymous profile searches, or requires a user with specific privileges to search.</em>
                             </li>
                             <li>
                                 <label for="dirAuthPreBindPassword"><strong>Bind Password</strong></label>
                                 <br />
                                 <input type="password" name="dirAuthPreBindPassword" value="" size="40"/><br />
                                 <em>
-                                    Enter a password for the above Bind DN if a value if needed.
+                                    Enter a password for the above Bind DN if a value is needed.
                                     <br />
                                     <strong>Note</strong>: this value will be stored in clear text in your database.
                                     <br />
@@ -682,23 +699,6 @@ ____________EOS;
                                 <br />
                                 <input type="password" name="dirAuthPreBindPassCheck" value="" size="40"/><br />
                                 <em>Confirm the above Bind Password if you are setting a new value.</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
-                                <em>
-                                    Suffix needed to be appended to the username. e.g. @domain.com<br />
-                                    <strong>NOTE:</strong> Changing this value will cause your existing directory users to have new accounts created the next time they login.
-                                </em>
-                            </li>
-                            <li>
-                                <label for="dirAuthFilter"><strong>Account Filter</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthFilter" value="$filter" size="40"/>
-                                (Defaults to <em>$defaultFilter</em>) 
-                                <br />
-                                <em>What LDAP field should we search the username against to locate the user's profile after successful login?</em>
                             </li>
                         </ul>
                     </fieldset>
