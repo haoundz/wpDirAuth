@@ -19,6 +19,10 @@ wpDirAuth is made possible by the following contributors:
     Managing Partner, PKR Internet, LLC
     http://www.pkrinternet.com/
 
+  Richard Valk
+    wpDirAuth QA contributor
+    http://richard5.net
+
 == wpLDAP Credits ==
 
 wpDirAuth was started (2007) from a patched version of wpLDAP 1.02.
