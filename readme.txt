@@ -3,7 +3,7 @@ Contributors: stephdau
 Tags: login, authentication, directory, ldap, ldaps
 Requires at least: 2.1
 Tested up to: 2.2.2
-Stable tag: 1.0
+Stable tag: 1.1
 
 WordPress directory authentication plugin through LDAP and LDAPS (SSL).
 
