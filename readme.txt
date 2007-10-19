@@ -1,8 +1,8 @@
 === wpDirAuth ===
 Contributors: stephdau
 Tags: login, authentication, directory, ldap, ldaps
-Requires at least: 2.1
-Tested up to: 2.2.2
+Requires at least: 2.2
+Tested up to: 2.3
 Stable tag: 1.1
 
 WordPress directory authentication plugin through LDAP and LDAPS (SSL).
