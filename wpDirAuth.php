@@ -576,6 +576,10 @@ ____________EOS;
             $filter = $defaultFilter;
         }
         
+        if (!$institution) {
+            $institution = '[YOUR INSTITUTION]';
+        }
+        
         if (!$loginScreenMsg) {
             $loginScreenMsg = sprintf(WPDIRAUTH_DEFAULT_LOGINSCREENMSG, $institution);
         }
