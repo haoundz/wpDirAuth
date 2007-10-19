@@ -61,7 +61,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
 Version: 1.1
-Author: Stephane Daury [and whoever wants to help]
+Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
 
