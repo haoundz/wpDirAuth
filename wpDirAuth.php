@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.0
+ * @version 1.1
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -60,15 +60,15 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.0
-Author: Stephane Daury [and whoever wants to help]
+Version: 1.1
+Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
 
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.0');
+define('WPDIRAUTH_VERSION', '1.1');
 
 /**
  * wpDirAuth signature.
@@ -251,13 +251,15 @@ else {
         
         $controllers      = explode(',', get_option('dirAuthControllers'));
         $baseDn           = get_option('dirAuthBaseDn');
+        $preBindUser      = get_option('dirAuthPreBindUser');
+        $preBindPassword  = get_option('dirAuthPreBindPassword');
         $accountSuffix    = get_option('dirAuthAccountSuffix');
         $filter           = get_option('dirAuthFilter');
         $enableSsl        = get_option('dirAuthEnableSsl');
         
         $returnKeys = array('sn', 'givenname', 'mail');
     
-        $isBound = $isLoggedIn = false;
+        $isBound = $isPreBound = $isLoggedIn = false;
         
         if (count($controllers) > 1) {
             // shuffle the domain controllers for pseudo load balancing and fault tolerance.
@@ -272,7 +274,11 @@ else {
         
         if ($accountSuffix) $username .= $accountSuffix;
     
-        $protocol = ($enableSsl) ? 'ldaps' : 'ldap';
+        /**
+         * Only setup protocol value if ldaps is required to help with older AD
+         * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/7b744c7ad66a4829
+         */
+        $protocol = ($enableSsl) ? 'ldaps://' : '';
         
         if (!$filter) $filter = WPDIRAUTH_DEFAULT_FILTER;
         
@@ -285,11 +291,10 @@ else {
              * is because with php and openldap 2.x, the ldap_connect() will
              * always return a resource as it does not actually connect but just
              * initializes the connecting parameters. The actual connection happens
-             * with the following ldap_bind() which is itself wrapped in a
-             * conditional check.
-             * @see Notes at http://php.net/ldap_connect
+             * with ldap_bind() which is itself wrapped in a conditional check.
+             * @see Notes in return value definition at http://php.net/ldap_connect
              */
-            $connection = @ldap_connect($protocol.'://'.$dc);
+            $connection = @ldap_connect($protocol.$dc);
             /**
              * Copes with W2K3/AD issue.
              * @see http://bugs.php.net/bug.php?id=30670
@@ -297,42 +302,65 @@ else {
             if (@ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3)) {
                 @ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
             }
-            /**
-             * Attempt bind, both anonymously or with credentials (see cases)
-             */ 
-            if ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+            
+            if ($preBindUser && $preBindPassword) {
                 /**
-                 * Use case 1: Servers that will not let you bind anonymously
-                 * altogether.
+                 * Use case 1: Servers requiring pre-binding with admin defined
+                 * credentials to search for the user's full DN before attempting
+                 * to login.
+                 * @see http://dev.wp-plugins.org/ticket/681
+                 */
+                if ( $isPreBound = wpDirAuth_bindTest($connection, $preBindUser, $preBindPassword) === true ) {
+                    if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
+                        if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
+                            if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
+                                $isLoggedIn = true; // valid server, valid login, move on
+                                break; // valid server, valid login, move on
+                            }
+                        }
+                    }
+                }
+            }
+            elseif ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+                /**
+                 * Use case 2: Servers that will not let you bind anonymously
+                 * but will let the end user bind directly.
                  * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/8fd16c05266fc832
-                 * @see wpDirAuth_bindTest
                  */
                 $isLoggedIn = true;
-                break;
+                break;  // valid server, valid login, move on
             }
             elseif ( ($isBound = @ldap_bind($connection)) === true ) {
                 /**
-                 * Use case 2: Servers that might require a full user DN to
+                 * Use case 3: Servers that might require a full user DN to
                  * actually login and therefore let you bind anonymously first .
                  * Try ldap_search + ldap_get_dn before attempting a login.
                  * @see http://wordpress.org/support/topic/129814?replies=34#post-603644
                  */
                 if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
                     if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
-                        $username = $userDn;
+                        if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
+                            $isLoggedIn = true; // valid server, valid login, move on
+                            break; // valid server, valid login, move on
+                        }
                     }
                 }
-                break;
             }
         }
         
-        if (!$isBound) {
+        if ( ($preBindUser && $preBindPassword) && ( ! $isPreBound ) ) {
             $error = $errorTitle
-                   . __(' No directory server available for authentication.');
+                   . __(' wpDirAuth config error: No directory server available for authentication, OR pre-binding credentials denied.');
             $pwd = '';
             return false;
         }
-        elseif ( ($isLoggedIn === false) && ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === false ) ) {
+        elseif ( ! $isBound) {
+            $error = $errorTitle
+                   . __(' wpDirAuth config error: No directory server available for authentication.');
+            $pwd = '';
+            return false;
+        }
+        elseif ( ! $isLoggedIn) {
             $error = $errorTitle
                    . __(' Could not authenticate user. Please check your credentials.')
                    . " [$username]";
@@ -342,8 +370,7 @@ else {
         else {
             /**
              * Search for profile, if still needed.
-             * @see Preceding loop: Use case 1 with anonymous ldap_search
-             *      failure or use case 2 and 3 in loop above)
+             * @see $results in preceding loop: Use case 3
              */
             if (!$results) $results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys);
             
@@ -460,61 +487,77 @@ ____________EOS;
         
         if ($_POST) {
             // Booleans
-            $enable         = intval($_POST['dirAuthEnable'])      == 1 ? 1 : 0;
-            $enableSsl      = intval($_POST['dirAuthEnableSsl'])   == 1 ? 1 : 0;
-            $requireSsl     = intval($_POST['dirAuthRequireSsl'])  == 1 ? 1 : 0;
-            $TOS            = intval($_POST['dirAuthTOS'])         == 1 ? 1 : 0;
+            $enable           = intval($_POST['dirAuthEnable'])      == 1 ? 1 : 0;
+            $enableSsl        = intval($_POST['dirAuthEnableSsl'])   == 1 ? 1 : 0;
+            $requireSsl       = intval($_POST['dirAuthRequireSsl'])  == 1 ? 1 : 0;
+            $TOS              = intval($_POST['dirAuthTOS'])         == 1 ? 1 : 0;
 
             // Strings, no HTML
-            $controllers    = wpDirAuth_sanitize($_POST['dirAuthControllers']);
-            $baseDn         = wpDirAuth_sanitize($_POST['dirAuthBaseDn']);
-            $accountSuffix  = wpDirAuth_sanitize($_POST['dirAuthAccountSuffix']);
-            $filter         = wpDirAuth_sanitize($_POST['dirAuthFilter']);
-            $institution    = wpDirAuth_sanitize($_POST['dirAuthInstitution']);
+            $controllers      = wpDirAuth_sanitize($_POST['dirAuthControllers']);
+            $baseDn           = wpDirAuth_sanitize($_POST['dirAuthBaseDn']);
+            $preBindUser      = wpDirAuth_sanitize($_POST['dirAuthPreBindUser']);
+            $preBindPassword  = wpDirAuth_sanitize($_POST['dirAuthPreBindPassword']);
+            $preBindPassCheck = wpDirAuth_sanitize($_POST['dirAuthPreBindPassCheck']);
+            $accountSuffix    = wpDirAuth_sanitize($_POST['dirAuthAccountSuffix']);
+            $filter           = wpDirAuth_sanitize($_POST['dirAuthFilter']);
+            $institution      = wpDirAuth_sanitize($_POST['dirAuthInstitution']);
 
             // Have to be allowed to contain some HTML
-            $loginScreenMsg = wpDirAuth_sanitize($_POST['dirAuthLoginScreenMsg'], true);
-            $changePassMsg  = wpDirAuth_sanitize($_POST['dirAuthChangePassMsg'], true);
+            $loginScreenMsg   = wpDirAuth_sanitize($_POST['dirAuthLoginScreenMsg'], true);
+            $changePassMsg    = wpDirAuth_sanitize($_POST['dirAuthChangePassMsg'], true);
             
-            update_option('dirAuthEnable',         $enable);
-            update_option('dirAuthEnableSsl',      $enableSsl);
-            update_option('dirAuthRequireSsl',     $requireSsl);
-            update_option('dirAuthControllers',    $controllers);
-            update_option('dirAuthBaseDn',         $baseDn);
-            update_option('dirAuthAccountSuffix',  $accountSuffix);
-            update_option('dirAuthFilter',         $filter);
-            update_option('dirAuthInstitution',    $institution);
-            update_option('dirAuthLoginScreenMsg', $loginScreenMsg);
-            update_option('dirAuthChangePassMsg',  $changePassMsg);
-            update_option('dirAuthTOS',            $TOS);
+            update_option('dirAuthEnable',          $enable);
+            update_option('dirAuthEnableSsl',       $enableSsl);
+            update_option('dirAuthRequireSsl',      $requireSsl);
+            update_option('dirAuthControllers',     $controllers);
+            update_option('dirAuthBaseDn',          $baseDn);
+            update_option('dirAuthPreBindUser',     $preBindUser);
+            update_option('dirAuthAccountSuffix',   $accountSuffix);
+            update_option('dirAuthFilter',          $filter);
+            update_option('dirAuthInstitution',     $institution);
+            update_option('dirAuthLoginScreenMsg',  $loginScreenMsg);
+            update_option('dirAuthChangePassMsg',   $changePassMsg);
+            update_option('dirAuthTOS',             $TOS);
+            
+            // Only store/override the value if a new one is being sent a bind user is set.
+            if ( $preBindUser && $preBindPassword && ($preBindPassCheck == $preBindPassword) )
+                update_option('dirAuthPreBindPassword', $preBindPassword);
+            
+            // Clear the stored password if the Bind DN is null
+            elseif ( ! $preBindUser)
+                update_option('dirAuthPreBindPassword', '');
     
-            if (get_option('dirAuthEnable') && !get_option('dirAuthCookieMarker')) {
+            if (get_option('dirAuthEnable') && !get_option('dirAuthCookieMarker'))
                 wpDirAuth_makeCookieMarker();
-            }
             
             echo '<div id="message" class="updated fade"><p>Your new settings were saved successfully.</p></div>';
+            
+            // Be sure to clear $preBindPassword, not to be displayed onscreen or in source
+            unset($preBindPassword);
         }
         else {        
             // Booleans
-            $enable         = intval(get_option('dirAuthEnable'))     == 1 ? 1 : 0;
-            $enableSsl      = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
-            $requireSsl     = intval(get_option('dirAuthRequireSsl')) == 1 ? 1 : 0;
-            $TOS            = intval(get_option('dirAuthTOS'))        == 1 ? 1 : 0;
+            $enable          = intval(get_option('dirAuthEnable'))     == 1 ? 1 : 0;
+            $enableSsl       = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
+            $requireSsl      = intval(get_option('dirAuthRequireSsl')) == 1 ? 1 : 0;
+            $TOS             = intval(get_option('dirAuthTOS'))        == 1 ? 1 : 0;
             
             // Strings, no HTML
-            $controllers    = wpDirAuth_sanitize(get_option('dirAuthControllers'));
-            $baseDn         = wpDirAuth_sanitize(get_option('dirAuthBaseDn'));
-            $accountSuffix  = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
-            $filter         = wpDirAuth_sanitize(get_option('dirAuthFilter'));
-            $institution    = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
+            $controllers     = wpDirAuth_sanitize(get_option('dirAuthControllers'));
+            $baseDn          = wpDirAuth_sanitize(get_option('dirAuthBaseDn'));
+            $preBindUser     = wpDirAuth_sanitize(get_option('dirAuthPreBindUser'));
+            $accountSuffix   = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
+            $filter          = wpDirAuth_sanitize(get_option('dirAuthFilter'));
+            $institution     = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
             
             // Have to be allowed to contain some HTML
-            $loginScreenMsg = wpDirAuth_sanitize(get_option('dirAuthLoginScreenMsg'), true);
-            $changePassMsg  = wpDirAuth_sanitize(get_option('dirAuthChangePassMsg'), true);
+            $loginScreenMsg  = wpDirAuth_sanitize(get_option('dirAuthLoginScreenMsg'), true);
+            $changePassMsg   = wpDirAuth_sanitize(get_option('dirAuthChangePassMsg'), true);
         }
 
         $controllers    = htmlspecialchars($controllers);
         $baseDn         = htmlspecialchars($baseDn);
+        $preBindUser    = htmlspecialchars($preBindUser);
         $accountSuffix  = htmlspecialchars($accountSuffix);
         $filter         = htmlspecialchars($filter);
         $institution    = htmlspecialchars($institution);
@@ -531,6 +574,10 @@ ____________EOS;
         $defaultFilter = WPDIRAUTH_DEFAULT_FILTER;
         if (!$filter) {
             $filter = $defaultFilter;
+        }
+        
+        if (!$institution) {
+            $institution = '[YOUR INSTITUTION]';
         }
         
         if (!$loginScreenMsg) {
@@ -579,8 +626,10 @@ ____________EOS;
                                 <input type="radio" name="dirAuthEnable" value="1" $tEnable /> Yes &nbsp;
                                 <input type="radio" name="dirAuthEnable" value="0" $fEnable /> No
                                 <br />
-                                <strong>NOTE</strong>: Users created in WordPress are not affected by your directory authentication settings.
-                            </li>
+                                <strong>Note 1</strong>: Users created in WordPress are not affected by your directory authentication settings.
+                                <br />
+                                <strong>Note 2</strong>: You will still be able to login with standard WP users if the LDAP server(s) go offline.
+                                </li>
                             <li>
                                 <label for="dirAuthRequireSsl"><strong>Require SSL Login?</strong></label>
                                 <br />
@@ -609,21 +658,6 @@ ____________EOS;
                                 <em>The DNS name or IP address of the directory server(s). Separate multiple entries by a comma (,).</em>
                             </li>
                             <li>
-                                <label for="dirAuthBaseDn"><strong>Base DN</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthBaseDn" value="$baseDn" size="40"/><br />
-                                <em>The base DN for carrying out LDAP searches.</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
-                                <em>
-                                    Suffix needed to be appended to the username. e.g. @domain.com<br />
-                                    <strong>NOTE:</strong> Changing this value will cause your existing directory users to have new accounts created the next time they login.
-                                </em>
-                            </li>
-                            <li>
                                 <label for="dirAuthFilter"><strong>Account Filter</strong></label>
                                 <br />
                                 <input type="text" name="dirAuthFilter" value="$filter" size="40"/>
@@ -631,9 +665,48 @@ ____________EOS;
                                 <br />
                                 <em>What LDAP field should we search the username against to locate the user's profile after successful login?</em>
                             </li>
+                            <li>
+                                <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
+                                <br />
+                                <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
+                                <em>
+                                    Suffix to be automatically appended to the username if desired. e.g. @domain.com<br />
+                                    <strong>NOTE:</strong> Changing this value will cause your existing directory users to have new accounts created the next time they login.
+                                </em>
+                            </li>
+                            <li>
+                                <label for="dirAuthBaseDn"><strong>Base DN</strong></label>
+                                <br />
+                                <input type="text" name="dirAuthBaseDn" value="$baseDn" size="40"/><br />
+                                <em>The base DN for carrying out LDAP searches.</em>
+                            </li>
+                            <li>
+                                <label for="dirAuthPreBindUser"><strong>Bind DN</strong></label>
+                                <br />
+                                <input type="text" name="dirAuthPreBindUser" value="$preBindUser" size="40"/><br />
+                                <em>Enter a valid user account/DN to pre-bind with if your LDAP server does not allow anonymous profile searches, or requires a user with specific privileges to search.</em>
+                            </li>
+                            <li>
+                                <label for="dirAuthPreBindPassword"><strong>Bind Password</strong></label>
+                                <br />
+                                <input type="password" name="dirAuthPreBindPassword" value="" size="40"/><br />
+                                <em>
+                                    Enter a password for the above Bind DN if a value is needed.
+                                    <br />
+                                    <strong>Note</strong>: this value will be stored in clear text in your database.
+                                    <br />
+                                    Simply clear the Bind DN value if you wish to delete the stored password altogether.
+                                    </em>
+                            </li>
+                            <li>
+                                <label for="dirAuthPreBindPassCheck"><strong>Confirm Password</strong></label>
+                                <br />
+                                <input type="password" name="dirAuthPreBindPassCheck" value="" size="40"/><br />
+                                <em>Confirm the above Bind Password if you are setting a new value.</em>
+                            </li>
                         </ul>
                     </fieldset>
-                    <fieldset class="options">
+                        <fieldset class="options">
                         <legend>Branding Settings</legend>
                         <ul>
                             <li>
