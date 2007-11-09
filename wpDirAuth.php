@@ -1261,7 +1261,6 @@ ________EOS;
     if (function_exists('add_action')) {
         add_action('admin_menu',     'wpDirAuth_addMenu');
         add_action('login_form',     'wpDirAuth_loginFormExtra');
-        add_action('user_register',  'wpDirAuth_profileFormExtra');
         add_action('profile_update', 'wpDirAuth_profileUpdate');
     }
     
