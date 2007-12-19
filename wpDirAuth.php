@@ -811,17 +811,18 @@ ________EOS;
             }
             
             if (get_option('dirAuthRequireSsl') && (!preg_match('|^https|',$selfURL))) {
-                $refreshJS   = '<script type="text/javascript">'."\n".'top.location.href=\''.$location.'\';'."\n".'</script>" />';
-                $refreshMeta = '<meta http-equiv="refresh" content="0;url='.$location.'" />';
-                $refreshMsg  = 'Please access the <a href="'.$location.'">encrypted version</a> of this page.';
+                $sslURL = str_replace('http://','https://',$selfURL);
+                
+                $refreshJS   = '<script type="text/javascript">'."\n".'top.location.href=\''.$sslURL.'\';'."\n".'</script>" />';
+                $refreshMeta = '<meta http-equiv="refresh" content="0;url='.$sslURL.'" />';
+                $refreshMsg  = 'Please access the <a href="'.$sslURL.'">encrypted version</a> of this page.';
                 
                 if (headers_sent()) {
                         echo $refreshJS.$refreshMeta.'<p>'.$refreshMsg.'</p></form></div></html>';
                 }
                 else {
                     @ob_end_clean();
-                    $location = str_replace('http://','https://',$selfURL);
-                    if (!@header('Location:'.$location)) {
+                    if (!@header('Location:'.$sslURL)) {
                         echo '<html><head>'.$refreshJS.$refreshMeta.'</head>'
                            . '<body>'.$refreshMsg.'</body></html>';
                     }
