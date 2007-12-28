@@ -60,7 +60,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.1
+Version: 1.2
 Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
@@ -68,7 +68,7 @@ Author URI: http://stephane.daury.org/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.1');
+define('WPDIRAUTH_VERSION', '1.2');
 
 /**
  * wpDirAuth signature.
@@ -286,15 +286,21 @@ else {
         
         // Connection pool loop - Haha, PooL LooP 
         foreach ($controllers as $dc) {
+            
             /**
-             * The lack of conditional check at the ldap_connect() level below
-             * is because with php and openldap 2.x, the ldap_connect() will
-             * always return a resource as it does not actually connect but just
-             * initializes the connecting parameters. The actual connection happens
-             * with ldap_bind() which is itself wrapped in a conditional check.
-             * @see Notes in return value definition at http://php.net/ldap_connect
+             * Scan for and use alternate server port, but only if ssl is disabled.
+             * @see Parameters constraint at http://ca.php.net/ldap_connect
              */
-            $connection = @ldap_connect($protocol.$dc);
+            
+            if (strstr($dc, ':')) list($dc, $port) = explode(':', $dc);
+            
+            if ( ( ! $enableSsl) && isset($port) ) {
+                $connection = @ldap_connect($protocol.$dc, $port);
+            }
+            else {
+                $connection = @ldap_connect($protocol.$dc);
+            }
+            
             /**
              * Copes with W2K3/AD issue.
              * @see http://bugs.php.net/bug.php?id=30670
@@ -615,142 +621,132 @@ ____________EOS;
         <div class="wrap">
             <h2>Directory Authentication Options</h2>
             <form method="post" id="dir_auth_options">
+                <p class="submit"><input type="submit" name="dirAuthOptionsSave" value="Update Options &raquo;" /></p>
                 <fieldset class="options">
-                    <p class="submit"><input type="submit" name="dirAuthOptionsSave" value="Update Options &raquo;" /></p>
-                    <fieldset class="options">
-                        <legend>WordPress Settings</legend>  
-                        <ul>
-                            <li>
-                                <label for="dirAuthEnable"><strong>Enable Directory Authentication?</strong></label>
-                                <br />
-                                <input type="radio" name="dirAuthEnable" value="1" $tEnable /> Yes &nbsp;
-                                <input type="radio" name="dirAuthEnable" value="0" $fEnable /> No
-                                <br />
-                                <strong>Note 1</strong>: Users created in WordPress are not affected by your directory authentication settings.
-                                <br />
-                                <strong>Note 2</strong>: You will still be able to login with standard WP users if the LDAP server(s) go offline.
-                                </li>
-                            <li>
-                                <label for="dirAuthRequireSsl"><strong>Require SSL Login?</strong></label>
-                                <br />
-                                <input type="radio" name="dirAuthRequireSsl" value="1" $tWpSsl/> Yes &nbsp;
-                                <input type="radio" name="dirAuthRequireSsl" value="0" $fWpSsl/> No
-                                <br />
-                                <em>Force the WordPress login screen to require encryption (SSL, https:// URL)?</em>
+                    <legend>WordPress Settings</legend>  
+                    <ul>
+                        <li>
+                            <label for="dirAuthEnable"><strong>Enable Directory Authentication?</strong></label>
+                            <br />
+                            <input type="radio" name="dirAuthEnable" value="1" $tEnable /> Yes &nbsp;
+                            <input type="radio" name="dirAuthEnable" value="0" $fEnable /> No
+                            <br />
+                            <strong>Note 1</strong>: Users created in WordPress are not affected by your directory authentication settings.
+                            <br />
+                            <strong>Note 2</strong>: You will still be able to login with standard WP users if the LDAP server(s) go offline.
                             </li>
-                        </ul>
-                    </fieldset>
-                    <fieldset class="options">
-                        <legend>Directory Settings</legend>
-                        <ul>
-                            <li>
-                                <label for="dirAuthEnableSsl"><strong>Enable SSL Connectivity?</strong></label>
-                                <br />
-                                <input type="radio" name="dirAuthEnableSsl" value="1" $tSsl/> Yes &nbsp;
-                                <input type="radio" name="dirAuthEnableSsl" value="0" $fSsl/> No
-                                <br />
-                                <em>Use encryption (SSL, ldaps:// URL) when WordPress connects to the directory server(s)?</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthControllers"><strong>Directory Servers (Domain Controllers)</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthControllers" value="$controllers" size="40"/><br />
-                                <em>The DNS name or IP address of the directory server(s). Separate multiple entries by a comma (,).</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthFilter"><strong>Account Filter</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthFilter" value="$filter" size="40"/>
-                                (Defaults to <em>$defaultFilter</em>) 
-                                <br />
-                                <em>What LDAP field should we search the username against to locate the user's profile after successful login?</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
-                                <em>
-                                    Suffix to be automatically appended to the username if desired. e.g. @domain.com<br />
-                                    <strong>NOTE:</strong> Changing this value will cause your existing directory users to have new accounts created the next time they login.
-                                </em>
-                            </li>
-                            <li>
-                                <label for="dirAuthBaseDn"><strong>Base DN</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthBaseDn" value="$baseDn" size="40"/><br />
-                                <em>The base DN for carrying out LDAP searches.</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthPreBindUser"><strong>Bind DN</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthPreBindUser" value="$preBindUser" size="40"/><br />
-                                <em>Enter a valid user account/DN to pre-bind with if your LDAP server does not allow anonymous profile searches, or requires a user with specific privileges to search.</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthPreBindPassword"><strong>Bind Password</strong></label>
-                                <br />
-                                <input type="password" name="dirAuthPreBindPassword" value="" size="40"/><br />
-                                <em>
-                                    Enter a password for the above Bind DN if a value is needed.
-                                    <br />
-                                    <strong>Note</strong>: this value will be stored in clear text in your database.
-                                    <br />
-                                    Simply clear the Bind DN value if you wish to delete the stored password altogether.
-                                    </em>
-                            </li>
-                            <li>
-                                <label for="dirAuthPreBindPassCheck"><strong>Confirm Password</strong></label>
-                                <br />
-                                <input type="password" name="dirAuthPreBindPassCheck" value="" size="40"/><br />
-                                <em>Confirm the above Bind Password if you are setting a new value.</em>
-                            </li>
-                        </ul>
-                    </fieldset>
-                        <fieldset class="options">
-                        <legend>Branding Settings</legend>
-                        <ul>
-                            <li>
-                                <label for="dirAuthInstitution"><strong>Institution Name</strong></label>
-                                <br />
-                                <input type="text" name="dirAuthInstitution" value="$institution" size="40" />
-                                <br />
-                                <em>Name of your institution/company. Displayed on the login screen.</em>
-                            </li>
-                            <li>
-                                <label for="dirAuthLoginScreenMsg"><strong>Login Screen Message</strong></label>
-                                <br />
-                                <textarea name="dirAuthLoginScreenMsg" cols="40" rows="3">$loginScreenMsg</textarea>
-                                <br />
-                                <em>
-                                    Displayed on the login screen, underneath the username/password fields.<br />
-                                    Some HTML allowed: $allowedHTML
-                                </em>
-                            </li>
-                            <li>
-                                <label for="dirAuthChangePassMsg"><strong>Password Change Message</strong></label>
-                                <br />
-                                <textarea name="dirAuthChangePassMsg" cols="40" rows="3">$changePassMsg</textarea>
-                                <br />
-                                <em>
-                                    Displayed wherever user passwords can be changed, for directory users only.<br />
-                                    Some HTML allowed: $allowedHTML
-                                </em>
-                            </li>
-                            <li>
-                                <label for="dirAuthTOS"><strong>Terms of Services Agreement</strong></label>
-                                <br />
-                                <input type="radio" name="dirAuthTOS" value="1" $tTOS/> Yes &nbsp;
-                                <input type="radio" name="dirAuthTOS" value="0" $fTOS/> No
-                                <br />
-                                <em>
-                                    Ask directory users to agree to terms of services that you link to in the message above?<br />
-                                    <strong>Note</strong>: Checkbox disappears once checked, date of agreement is stored and users are no longer prompted.
-                                </em>
-                            </li>
-                            </ul>
-                    </fieldset>
-                    <p class="submit"><input type="submit" name="dirAuthOptionsSave" value="Update Options &raquo;" /></p>
+                        <li>
+                            <label for="dirAuthRequireSsl"><strong>Require SSL Login?</strong></label>
+                            <br />
+                            <input type="radio" name="dirAuthRequireSsl" value="1" $tWpSsl/> Yes &nbsp;
+                            <input type="radio" name="dirAuthRequireSsl" value="0" $fWpSsl/> No
+                            <br />
+                            <em>Force the WordPress login screen to require encryption (SSL, https:// URL)?</em>
+                        </li>
+                    </ul>
                 </fieldset>
+                <fieldset class="options">
+                    <legend>Directory Settings</legend>
+                    <ul>
+                        <li>
+                            <label for="dirAuthEnableSsl"><strong>Enable SSL Connectivity?</strong></label>
+                            <br />
+                            <input type="radio" name="dirAuthEnableSsl" value="1" $tSsl/> Yes &nbsp;
+                            <input type="radio" name="dirAuthEnableSsl" value="0" $fSsl/> No
+                            <br />
+                            <em>Use encryption (SSL, ldaps:// URL) when WordPress connects to the directory server(s)?</em>
+                        </li>
+                        <li>
+                            <label for="dirAuthControllers"><strong>Directory Servers (Domain Controllers)</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthControllers" value="$controllers" size="40"/><br />
+                            <em>The DNS name or IP address of the directory server(s).</em><br />
+                            <strong>NOTE:</strong> Separate multiple entries by a comma and/or alternate ports with a colon (eg: my.server1.org, my.server2.edu:387).
+                            Unfortunately, alternate ports will be ignored when using LDAP/SSL, because of <a href="http://ca3.php.net/ldap_connect">the way</a> PHP handles the protocol.
+                            
+                        </li>
+                        <li>
+                            <label for="dirAuthFilter"><strong>Account Filter</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthFilter" value="$filter" size="40"/>
+                            (Defaults to <em>$defaultFilter</em>) 
+                            <br />
+                            <em>What LDAP field should we search the username against to locate the user's profile after successful login?</em>
+                        </li>
+                        <li>
+                            <label for="dirAuthAccountSuffix"><strong>Account Suffix</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthAccountSuffix" value="$accountSuffix" size="40" /><br />
+                            <em>Suffix to be automatically appended to the username if desired. e.g. @domain.com</em><br />
+                            <strong>NOTE:</strong> Changing this value will cause your existing directory users to have new accounts created the next time they login.
+                        </li>
+                        <li>
+                            <label for="dirAuthBaseDn"><strong>Base DN</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthBaseDn" value="$baseDn" size="40"/><br />
+                            <em>The base DN for carrying out LDAP searches.</em>
+                        </li>
+                        <li>
+                            <label for="dirAuthPreBindUser"><strong>Bind DN</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthPreBindUser" value="$preBindUser" size="40"/><br />
+                            <em>Enter a valid user account/DN to pre-bind with if your LDAP server does not allow anonymous profile searches, or requires a user with specific privileges to search.</em>
+                        </li>
+                        <li>
+                            <label for="dirAuthPreBindPassword"><strong>Bind Password</strong></label>
+                            <br />
+                            <input type="password" name="dirAuthPreBindPassword" value="" size="40"/><br />
+                            <em>Enter a password for the above Bind DN if a value is needed.</em><br />
+                            <strong>Note 1</strong>: this value will be stored in clear text in your WordPress database.<br />
+                            <strong>Note 2</strong>: Simply clear the Bind DN value if you wish to delete the stored password altogether.
+                        </li>
+                        <li>
+                            <label for="dirAuthPreBindPassCheck"><strong>Confirm Password</strong></label>
+                            <br />
+                            <input type="password" name="dirAuthPreBindPassCheck" value="" size="40"/><br />
+                            <em>Confirm the above Bind Password if you are setting a new value.</em>
+                        </li>
+                    </ul>
+                </fieldset>
+                <fieldset class="options">
+                    <legend>Branding Settings</legend>
+                    <ul>
+                        <li>
+                            <label for="dirAuthInstitution"><strong>Institution Name</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthInstitution" value="$institution" size="40" />
+                            <br />
+                            <em>Name of your institution/company. Displayed on the login screen.</em>
+                        </li>
+                        <li>
+                            <label for="dirAuthLoginScreenMsg"><strong>Login Screen Message</strong></label>
+                            <br />
+                            <textarea name="dirAuthLoginScreenMsg" cols="40" rows="3">$loginScreenMsg</textarea>
+                            <br />
+                            <em>Displayed on the login screen, underneath the username/password fields.</em><br />
+                            <strong>Note</strong>: Some HTML allowed: $allowedHTML
+                        </li>
+                        <li>
+                            <label for="dirAuthChangePassMsg"><strong>Password Change Message</strong></label>
+                            <br />
+                            <textarea name="dirAuthChangePassMsg" cols="40" rows="3">$changePassMsg</textarea>
+                            <br />
+                            <em>Displayed wherever user passwords can be changed, for directory users only.</em><br />
+                            <strong>Note</strong>: Some HTML allowed: $allowedHTML
+                            
+                        </li>
+                        <li>
+                            <label for="dirAuthTOS"><strong>Terms of Services Agreement</strong></label>
+                            <br />
+                            <input type="radio" name="dirAuthTOS" value="1" $tTOS/> Yes &nbsp;
+                            <input type="radio" name="dirAuthTOS" value="0" $fTOS/> No
+                            <br />
+                            <em>Ask directory users to agree to terms of services that you link to in the message above?</em><br />
+                            <strong>Note</strong>: Checkbox disappears once checked, date of agreement is stored and users are no longer prompted.
+                        </li>
+                        </ul>
+                </fieldset>
+                <p class="submit"><input type="submit" name="dirAuthOptionsSave" value="Update Options &raquo;" /></p>
             </form>
             <p>Powered by $wpDARef.</p>
         </div>
@@ -811,17 +807,18 @@ ________EOS;
             }
             
             if (get_option('dirAuthRequireSsl') && (!preg_match('|^https|',$selfURL))) {
-                $refreshJS   = '<script type="text/javascript">'."\n".'top.location.href=\''.$location.'\';'."\n".'</script>" />';
-                $refreshMeta = '<meta http-equiv="refresh" content="0;url='.$location.'" />';
-                $refreshMsg  = 'Please access the <a href="'.$location.'">encrypted version</a> of this page.';
+                $sslURL = str_replace('http://','https://',$selfURL);
+                
+                $refreshJS   = '<script type="text/javascript">'."\n".'top.location.href=\''.$sslURL.'\';'."\n".'</script>" />';
+                $refreshMeta = '<meta http-equiv="refresh" content="0;url='.$sslURL.'" />';
+                $refreshMsg  = 'Please access the <a href="'.$sslURL.'">encrypted version</a> of this page.';
                 
                 if (headers_sent()) {
                         echo $refreshJS.$refreshMeta.'<p>'.$refreshMsg.'</p></form></div></html>';
                 }
                 else {
                     @ob_end_clean();
-                    $location = str_replace('http://','https://',$selfURL);
-                    if (!@header('Location:'.$location)) {
+                    if (!@header('Location:'.$sslURL)) {
                         echo '<html><head>'.$refreshJS.$refreshMeta.'</head>'
                            . '<body>'.$refreshMsg.'</body></html>';
                     }
@@ -1261,7 +1258,6 @@ ________EOS;
     if (function_exists('add_action')) {
         add_action('admin_menu',     'wpDirAuth_addMenu');
         add_action('login_form',     'wpDirAuth_loginFormExtra');
-        add_action('user_register',  'wpDirAuth_profileFormExtra');
         add_action('profile_update', 'wpDirAuth_profileUpdate');
     }
     
