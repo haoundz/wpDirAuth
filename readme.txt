@@ -1,5 +1,5 @@
 === wpDirAuth ===
-Contributors: stephdau
+Contributors: stephdau, apokalyptik
 Tags: login, authentication, directory, ldap, ldaps
 Requires at least: 2.2
 Tested up to: 2.4-bleeding
