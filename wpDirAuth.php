@@ -7,7 +7,7 @@
  * Sun Java System Directory Server, etc.
  * 
  * Please note that wpDirAuth will start in safe mode if it detects that
- * another plugin is in conflict, by detecting if the wp_login and
+ * another plugin is in conflict, by detecting if the wp_authenticate and
  * wp_setcookie functions have already been overwritten. It cannot,
  * on the other hand, detect plugins that might want to overwrite these
  * functions after wpDirAuth has been loaded.
@@ -60,7 +60,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.2
+Version: 1.4
 Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
@@ -68,7 +68,7 @@ Author URI: http://stephane.daury.org/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.2');
+define('WPDIRAUTH_VERSION', '1.4');
 
 /**
  * wpDirAuth signature.
@@ -96,7 +96,7 @@ define('WPDIRAUTH_DEFAULT_CHANGEPASSMSG', 'To change a %s password, please refer
 define('WPDIRAUTH_ALLOWED_TAGS', '<a><strong><em><p><ul><ol><li>');
 
 
-if (function_exists('wp_login') || function_exists('wp_setcookie') || !function_exists('ldap_connect')) {
+if (function_exists('wp_authenticate') || function_exists('wp_setcookie') || !function_exists('ldap_connect')) {
 /**
  * SAFE MODE
  */
@@ -135,7 +135,7 @@ ________EOS;
                 <br />wpDirAuth is now running in safe mode as to not impair the other plugin's operations.'
             </p>
             <p>
-                The wp_login and wp_setcookie WordPress
+                The wp_authenticate and wp_setcookie WordPress
                 <a href="http://codex.wordpress.org/Pluggable_Functions">pluggable functions</a>
                 have already been redefined, and wpDirAuth cannot provide directory authentication
                 without having access to these functions.
@@ -194,7 +194,7 @@ else {
     /**
      * Cookie marker.
      * Generates a random string to be used as salt for the password
-     * hash cookie checks in wp_setcookie and wp_login
+     * hash cookie checks in wp_setcookie and wp_authenticate
      *
      * @return string 55 chars-long salty goodness (md5 + uniqid)
      */
@@ -223,6 +223,7 @@ else {
      *      */
     function wpDirAuth_bindTest(&$connection, &$username, &$password)
     {
+	$password = strtr($password, array("\'"=>"'"));
         if ( ($isBound = @ldap_bind($connection, $username, $password)) === false ) {
             // @see wpLDAP comment at http://ashay.org/?page_id=133#comment-558
             $isBound = @ldap_bind($connection,"uid=$username,$baseDn", $password);
@@ -238,7 +239,7 @@ else {
      *
      * @param string $username LDAP username
      * @param string $password LDAP password
-     * @return boolean false OR array Directory email, last_name and first_name
+     * @return WP_Error object OR array Directory email, last_name and first_name
      * 
      * @uses WPDIRAUTH_DEFAULT_FILTER
      * @uses wpDirAuth_bindTest
@@ -247,7 +248,7 @@ else {
     {
         global $error, $pwd;
         
-        $errorTitle = '<strong>'.__('Directory Login Error').'</strong>: ';
+        $errorTitle = __('<strong>Directory Login Error</strong>: ');
         
         $controllers      = explode(',', get_option('dirAuthControllers'));
         $baseDn           = get_option('dirAuthBaseDn');
@@ -266,10 +267,8 @@ else {
             shuffle($controllers);
         }
         elseif (count($controllers) == 0) {
-            $error = $errorTitle
-                   . __(' wpDirAuth config error: no domain controllers specified.');
-            $pwd = '';
-            return false;
+            return new WP_Error('no_controllers', $errorTitle
+                   . __(' wpDirAuth config error: no domain controllers specified.'));
         }
         
         if ($accountSuffix) $username .= $accountSuffix;
@@ -345,6 +344,7 @@ else {
                  */
                 if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
                     if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
+                        $isInDirectory = true; // account exists in directory
                         if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
                             $isLoggedIn = true; // valid server, valid login, move on
                             break; // valid server, valid login, move on
@@ -355,23 +355,21 @@ else {
         }
         
         if ( ($preBindUser && $preBindPassword) && ( ! $isPreBound ) ) {
-            $error = $errorTitle
-                   . __(' wpDirAuth config error: No directory server available for authentication, OR pre-binding credentials denied.');
-            $pwd = '';
-            return false;
+            return new WP_Error ('no_directory_or_prebinding', $errorTitle
+                   . __(' wpDirAuth config error: No directory server available for authentication, OR pre-binding credentials denied.'));
         }
-        elseif ( ! $isBound) {
-            $error = $errorTitle
-                   . __(' wpDirAuth config error: No directory server available for authentication.');
-            $pwd = '';
-            return false;
+	elseif ( ( $isInDirectory ) && ( ! $isBound ) ) {
+            return new WP_Error ('could_not_bind_as_user', $errorTitle
+                   . __(' Incorrect password.'));
+	}
+        elseif ( ! $isBound && ! $isPreBound ) {
+            return new WP_Error ('no_directory_available', $errorTitle
+                   . __(' wpDirAuth config error: No directory server available for authentication.'));
         }
         elseif ( ! $isLoggedIn) {
-            $error = $errorTitle
+            return new WP_Error ('could_not_authenticate', $errorTitle
                    . __(' Could not authenticate user. Please check your credentials.')
-                   . " [$username]";
-            $pwd = '';
-            return false;
+                   . " [$username]");
         }
         else {
             /**
@@ -381,32 +379,26 @@ else {
             if (!$results) $results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys);
             
             if (!$results) {
-                $error = $errorTitle
+                return new WP_Error ('noprofile_search', $errorTitle
                        . __('Directory authentication initially succeeded, but no
                              valid profile was found (search procedure).')
-                       ." [$filter]";
-                $pwd = '';
-                return false;
+                       ." [$filter]");
             }
             else{
                 $userInfo = @ldap_get_entries($connection, $results);
                 
                 $count = intval($userInfo['count']);
                 if ($count < 1) {
-                    $error = $errorTitle
+                    return new WP_Error ('noprofile_getentries', $errorTitle
                            . __('Directory authentication initially succeeded, but no
                                  valid profile was found ("get entries" procedure).')
-                           ." [$filter]";
-                    $pwd = '';
-                    return false;
+                           ." [$filter]");
                 }
                 elseif ($count > 1) {
-                    $error = $errorTitle
+                    return new WP_Error ('not_unique', $errorTitle
                            . __('Directory authentication initially succeeded, but the
                                  username you sent is not a unique profile identifier.')
-                           . " [$filter]";
-                    $pwd = '';
-                    return false;
+                           . " [$filter]");
                 }
                 else {
                     $email     = isset($userInfo[0]['mail'][0])
@@ -924,33 +916,28 @@ ________EOS;
 
 
     /**
-     * WP's wp_login overwrite.
+     * WP's wp_authenticate overwrite.
      * Processes the directory login and creates a new user on first access.
      *
      * @param string $username Login form username.
      * @param string $password Login form password
-     * @param boolean $already_md5 Has the pswd been double-hashed already?
-     * @return boolean
+     * @return WP_Error|WP_User WP_User object if login successful, otherwise WP_Error object.
      * 
      * @uses wpDirAuth_makeCookieMarker
      * @uses wpDirAuth_auth
      * 
      * @see http://codex.wordpress.org/Pluggable_Functions
      */
-    function wp_login($username, $password, $already_md5 = false)
+    function wp_authenticate($username, $password)
     {
-        global $error, $pwd;
-    
         if (!$username) {
-            $pwd = '';
-            return false;
+            return new WP_Error('empty_username', __('<strong>Login Error</strong>:
+                        The username field is empty.'));
         }
     
         if (!$password) {
-            $error = __('<strong>Login Error</strong>:
-                        The password field is empty.');
-            $pwd = '';
-            return false;
+            return new WP_Error('empty_password', __('<strong>Login Error</strong>:
+                        The password field is empty.'));
         }
         
         $enable       = get_option('dirAuthEnable');
@@ -971,26 +958,15 @@ ________EOS;
             /*
              * Existing directory user, but directory access has now been disabled.
              */
-            $error = __('<strong>Directory Login Error</strong>:
+            do_action( 'wp_login_failed', $username );
+            return new WP_Error('login_disabled',__('<strong>Directory Login Error</strong>:
                         Sorry, but the site administrators have disabled
-                        directory access in this WordPress install.');
-            $pwd = '';
-            return false;
+                        directory access in this WordPress install.'));
         }
         elseif ($enable) {
             /**
              * Directory auth == true
              */
-            if ($already_md5) {
-                /**
-                 * If already_md5 is TRUE, then we're getting the user/password from the cookie.
-                 * As we don't want to store LDAP passwords in any form, we've already replaced
-                 * the password with the hashed username and dirAuthCookieMarker
-                 */
-                if ($password == md5($username).md5($cookieMarker)) {
-                    return true;
-                }
-            }
     
             if (!$login) {
                 /**
@@ -998,7 +974,7 @@ ________EOS;
                  */
                 $userData = wpDirAuth_auth($username,$password);
                 
-                if ($userData !== false) {
+                if ( !is_wp_error($userData) ) {
                     /**
                      * Passed directory signin, so create a new WP user
                      */
@@ -1011,25 +987,21 @@ ________EOS;
                         /*
                          * Username exists.
                          */
-                        $error = __('<strong>Directory Login Error</strong>:
+                        do_action( 'wp_login_failed', $username );
+                        return new WP_Error('username_exists',__('<strong>Directory Login Error</strong>:
                                     Could not create a new WP user account
-                                    because your directory username is already
-                                    registered on this site.')
-                               . " [$userLogin]";
-                        $pwd = '';
-                        return false;
+                                    because the directory username <strong>' . $userLogin . '</strong> is already
+                                    registered on this site.'));
                     }
-                    elseif (email_exists($userLogin)) {
+                    elseif (email_exists($userEmail)) {
                         /*
                          * Email exists.
                          */
-                        $error = __('<strong>Directory Login Error</strong>:
+                        do_action( 'wp_login_failed', $username );
+                        return new WP_Error('email_exists',__('<strong>Directory Login Error</strong>:
                                     Could not create a new WP account because
-                                    the email retrieved from the directory is
-                                    already registered with this site.')
-                               . " [$userEmail]";
-                        $pwd = '';
-                        return false;
+                                    the email <strong>' . $userEmail . '</strong> is
+                                    already registered with this site.'));
                     }
                     elseif ($userID = wp_create_user($userLogin, $password, $userEmail)) {
                         $userData['ID'] = $userID;
@@ -1041,30 +1013,24 @@ ________EOS;
                         wp_update_user($userData);
                         update_usermeta($userID, 'wpDirAuthFlag', 1);
                         
-                        return true;
+                        return new WP_User($userID);
                     }
                     else {
                         /*
                          * Unknown error.
                          */
-                        $error = __('<strong>Directory Login Error</strong>:
+                        do_action( 'wp_login_failed', $username );
+                        return new WP_Error('creation_unknown_error',__('<strong>Directory Login Error</strong>:
                                     Could not create a new user account.
-                                    Unknown error.')
-                               . " [user: $userLogin, email: $userEmail]";
-                        $pwd = '';
-                        return false;
+                                    Unknown error. [user: ' . $userLogin . ', email: ' . $userEmail . ']'));
                     }
                 }
                 else {
                     /*
                      * Did not pass dir auth, and no login present in WP
                      */
-                    if (!$error) $error = __('<strong>Login Error</strong>:
-                                              Could not authenticate user in
-                                              either WordPress or the directory.
-                                              Please check credentials.');
-                    $pwd = '';
-                    return false;
+                    do_action( 'wp_login_failed', $username );
+                    return $userData;
                 }
             }
             else {
@@ -1074,24 +1040,20 @@ ________EOS;
                 if (!$loginUserIsDirUser) {
                     /*
                      * WP-only user
-                     * If the password is already_md5, it has been double hashed.
-                     * Otherwise, it is plain text.
                      */
-                    if ( ($already_md5 && $login->user_login == $username && md5($login->user_pass) == $password)
-                         || ($login->user_login == $username && $login->user_pass == md5($password)) ) {
+                    if ( wp_check_password($password, $login->user_pass, $login->ID) ) {
                         /*
                          * WP user, password okay.
                          */
-                         return true;
+                         return new WP_User($login->ID);
                     } 
                     else {
                         /*
                          * WP user, wrong pass
                          */
-                        $error = __('<strong>WordPress Login Error</strong>:
-                                    Incorrect password.');
-                        $pwd = '';
-                        return false;
+                        do_action( 'wp_login_failed', $username );
+                        return new WP_Error('incorrect_password',__('<strong>WordPress Login Error</strong>:
+                                    Incorrect password.'));
                     }
                 }
                 else {
@@ -1100,20 +1062,18 @@ ________EOS;
                      */
                     $userData = wpDirAuth_auth($username,$password);
                     
-                    if ($userData !== false) {
+                    if ( !is_wp_error($userData) ) {
                         /*
                          * Directory user, password okay.
                          */
-                        return true;
+                        return new WP_User($login->ID);
                     }
                     else {
                         /*
                          * Directory user, wrong pass
                          */
-                        $error = __('<strong>Directory Login Error</strong>:
-                                    Incorrect password.');
-                        $pwd = '';
-                        return false;
+                        do_action( 'wp_login_failed', $username );
+                        return $userData;
                     }
                 }
             }
@@ -1122,37 +1082,32 @@ ________EOS;
             /**
              * Directory auth == false
              */
-            if (!$login) {
+            if (!$login || ($login->user_login != $username) ) {
                 /**
                  * No existing account record found
                  */
-                $error = __('<strong>WordPress Login Error</strong>:
+                do_action( 'wp_login_failed', $username );
+                return new WP_Error('failed_login',__('<strong>WordPress Login Error</strong>:
                             Could not authenticate user.
-                            Please check your credentials.');
-                $pwd = '';
-                return false;
+                            Please check your credentials.'));
             } 
             else {
                 /*
                  * Found an existing WP account.
-                 * If the password is already_md5, it has been double hashed.
-                 * Otherwise, it is plain text.
                  */
-                if ( ($already_md5 && $login->user_login == $username && md5($login->user_pass) == $password)
-                     || ($login->user_login == $username && $login->user_pass == md5($password)) ) {
+                if ( wp_check_password($password, $login->user_pass, $login->ID) ) {
                     /*
                      * WP user, password okay.
                      */
-                    return true;
+                    return new WP_User($login->ID);
                 } 
                 else {
                     /*
                      * WP user, wrong pass
                      */
-                    $error = __('<strong>WordPress Login Error</strong>:
-                                Incorrect password).');
-                    $pwd = '';
-                    return false;
+                    do_action( 'wp_login_failed', $username );
+                    return new WP_Error('incorrect_password',__('<strong>WordPress Login Error</strong>:
+                                Incorrect password.'));
                 }
             }
         }
