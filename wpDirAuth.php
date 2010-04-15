@@ -63,7 +63,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.4
+Version: 1.5
 Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
@@ -265,8 +265,6 @@ else {
         if($boolUseGroups == 1){
             $strAuthGroups = get_option('dirAuthGroups');
         }
-        
-       //wpDirAuthPrintDebug($enableSsl,'enableSsl is curently ');
         
         $returnKeys = array('sn', 'givenname', 'mail');
     
@@ -621,7 +619,6 @@ ____________EOS;
         else {        
             // Booleans
             $enable          = intval(get_option('dirAuthEnable'))     == 1 ? 1 : 0;
-            //$enableSsl       = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
             $requireSsl      = intval(get_option('dirAuthRequireSsl')) == 1 ? 1 : 0;
             $TOS             = intval(get_option('dirAuthTOS'))        == 1 ? 1 : 0;
             $boolUseGroups   = intval(get_option('dirAuthUseGroups'))  == 1 ? 1 : 0;
