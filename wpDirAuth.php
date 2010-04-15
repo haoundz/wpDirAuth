@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.1
+ * @version 1.5
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -29,7 +29,10 @@
  *  
  * wpDirAuth Patch Contributions
  * Copyright (c) 2007 Todd Beverly
- *  
+ * 
+ * wpDirAuth Patch Contributions
+ * Copyright (c) 2010 Paul Gilzow 
+ * 
  * wpLDAP: WordPress LDAP Authentication
  * Copyright (c) 2007 Ashay Suresh Manjure - http://ashay.org/
  *  
@@ -68,7 +71,7 @@ Author URI: http://stephane.daury.org/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.4');
+define('WPDIRAUTH_VERSION', '1.5');
 
 /**
  * wpDirAuth signature.
@@ -257,6 +260,13 @@ else {
         $accountSuffix    = get_option('dirAuthAccountSuffix');
         $filter           = get_option('dirAuthFilter');
         $enableSsl        = get_option('dirAuthEnableSsl');
+        $boolUseGroups    = get_option('dirAuthUseGroups');
+        
+        if($boolUseGroups == 1){
+            $strAuthGroups = get_option('dirAuthGroups');
+        }
+        
+       //wpDirAuthPrintDebug($enableSsl,'enableSsl is curently ');
         
         $returnKeys = array('sn', 'givenname', 'mail');
     
@@ -292,12 +302,21 @@ else {
              */
             
             if (strstr($dc, ':')) list($dc, $port) = explode(':', $dc);
-            
-            if ( ( ! $enableSsl) && isset($port) ) {
-                $connection = @ldap_connect($protocol.$dc, $port);
-            }
-            else {
-                $connection = @ldap_connect($protocol.$dc);
+
+            switch($enableSsl){
+                case 1:
+                    $connection = ldap_connect($protocol.$dc);
+                    break;
+                case 2:
+                case 0:
+                default:
+                    if(isset($port)){
+                        $connection = ldap_connect($dc,$port);
+                    } else {
+                        $connection = ldap_connect($dc);
+                    }                
+                    break;                
+  
             }
             
             /**
@@ -306,6 +325,13 @@ else {
              */
             if (@ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3)) {
                 @ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
+            }
+            
+            //they want to start TLS
+            if($enableSsl == 2){
+                if(!ldap_start_tls($connection)){
+                    return new WP_Error('tls_failed_to_start',$errorTitle . __('wpDirAuth error: tls failed to start'));
+                }
             }
             
             if ($preBindUser && $preBindPassword) {
@@ -367,11 +393,55 @@ else {
                    . __(' wpDirAuth config error: No directory server available for authentication.'));
         }
         elseif ( ! $isLoggedIn) {
+            /**
+            * @desc wp-hack was echo'ing out $username verbatim which allowed a XSS vulnerability. Encoded $username before echoing'
+            */
             return new WP_Error ('could_not_authenticate', $errorTitle
                    . __(' Could not authenticate user. Please check your credentials.')
-                   . " [$username]");
+                   . " [" . htmlentities($username,ENT_QUOTES,'UTF-8') . "]");
+
+            
         }
         else {
+            if($boolUseGroups == 1){
+                //the user is authenticated, but we want to make sure they are a member of the groups given
+                /**
+                * We need to get the DN's for each Authentication Group CN that was given to us. 
+                */
+                $aryAuthGroupsDN = array();
+                $aryAuthGroups = explode(',',$strAuthGroups);
+                $aryAttribs = array('distinguishedname');
+                foreach($aryAuthGroups as $strAuthGroup){
+                    $strAuthGroup = 'cn='.$strAuthGroup;
+                    $rscLDAPSearch = ldap_search($connection,$baseDn,$strAuthGroup,$aryAttribs);
+                    $arySearchResults = ldap_get_entries($connection,$rscLDAPSearch);
+                    wpDirAuthPrintDebug($arySearchResults,'search results for ' . $strAuthGroup);
+                    if(isset($arySearchResults[0]['dn'])){
+                        $aryAuthGroupsDN[] = $arySearchResults[0]['dn'];    
+                    }    
+                }
+                
+                if(count($aryAuthGroupsDN) == 0){
+                    return new WP_Error('no_auth_groups_found',$errorTitle.__('No Authentication Groups found based on given group CN'));
+                }                
+                               
+                
+                $strFilterQuery = '(&'.$filterQuery;
+                foreach($aryAuthGroupsDN as $strAuthGroupDN){
+                    $strFilterQuery .= '(memberOf='.$strAuthGroupDN.')';
+                }
+                $strFilterQuery .= ')';
+                if(($rscLDAPSearchGroupMember = ldap_search($connection,$baseDn,$strFilterQuery)) !== false){
+                    $arySearchResultsMember = ldap_get_entries($connection,$rscLDAPSearchGroupMember);
+                    if($arySearchResultsMember['count'] !== 1){
+                        return new WP_Error('not_member_of_auth_group',$errorTitle
+                            . __('User authenticated but is not a member of an Authentication Group(s)'));
+                    }
+                }
+                
+            }            
+            
+            
             /**
              * Search for profile, if still needed.
              * @see $results in preceding loop: Use case 3
@@ -484,12 +554,19 @@ ____________EOS;
         }
         
         if ($_POST) {
+            $enableSsl        = 0; //default
+            $boolUseGroups    = 0; //default
             // Booleans
             $enable           = intval($_POST['dirAuthEnable'])      == 1 ? 1 : 0;
-            $enableSsl        = intval($_POST['dirAuthEnableSsl'])   == 1 ? 1 : 0;
             $requireSsl       = intval($_POST['dirAuthRequireSsl'])  == 1 ? 1 : 0;
             $TOS              = intval($_POST['dirAuthTOS'])         == 1 ? 1 : 0;
 
+            //integers
+            if(intval($_POST['dirAuthEnableSsl']) == 1 || intval($_POST['dirAuthEnableSsl']) == 2){
+                 $enableSsl        = intval($_POST['dirAuthEnableSsl']);
+            }
+          
+            
             // Strings, no HTML
             $controllers      = wpDirAuth_sanitize($_POST['dirAuthControllers']);
             $baseDn           = wpDirAuth_sanitize($_POST['dirAuthBaseDn']);
@@ -499,7 +576,12 @@ ____________EOS;
             $accountSuffix    = wpDirAuth_sanitize($_POST['dirAuthAccountSuffix']);
             $filter           = wpDirAuth_sanitize($_POST['dirAuthFilter']);
             $institution      = wpDirAuth_sanitize($_POST['dirAuthInstitution']);
+            $strAuthGroups    = wpDirAuth_sanitize($_POST['dirAuthGroups']);
 
+            if($strAuthGroups != ''){
+                $boolUseGroups = 1;    
+            }            
+            
             // Have to be allowed to contain some HTML
             $loginScreenMsg   = wpDirAuth_sanitize($_POST['dirAuthLoginScreenMsg'], true);
             $changePassMsg    = wpDirAuth_sanitize($_POST['dirAuthChangePassMsg'], true);
@@ -516,6 +598,9 @@ ____________EOS;
             update_option('dirAuthLoginScreenMsg',  $loginScreenMsg);
             update_option('dirAuthChangePassMsg',   $changePassMsg);
             update_option('dirAuthTOS',             $TOS);
+            update_option('dirAuthUseGroups',       $boolUseGroups);
+            update_option('dirAuthGroups',          $strAuthGroups);
+
             
             // Only store/override the value if a new one is being sent a bind user is set.
             if ( $preBindUser && $preBindPassword && ($preBindPassCheck == $preBindPassword) )
@@ -536,9 +621,13 @@ ____________EOS;
         else {        
             // Booleans
             $enable          = intval(get_option('dirAuthEnable'))     == 1 ? 1 : 0;
-            $enableSsl       = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
+            //$enableSsl       = intval(get_option('dirAuthEnableSsl'))  == 1 ? 1 : 0;
             $requireSsl      = intval(get_option('dirAuthRequireSsl')) == 1 ? 1 : 0;
             $TOS             = intval(get_option('dirAuthTOS'))        == 1 ? 1 : 0;
+            $boolUseGroups   = intval(get_option('dirAuthUseGroups'))  == 1 ? 1 : 0;
+            
+            //integers
+            $enableSsl       = intval(get_option('dirAuthEnableSsl',0));
             
             // Strings, no HTML
             $controllers     = wpDirAuth_sanitize(get_option('dirAuthControllers'));
@@ -547,6 +636,7 @@ ____________EOS;
             $accountSuffix   = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
             $filter          = wpDirAuth_sanitize(get_option('dirAuthFilter'));
             $institution     = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
+            $strAuthGroups   = wpDirAuth_sanitize((get_option('dirAuthGroups')));
             
             // Have to be allowed to contain some HTML
             $loginScreenMsg  = wpDirAuth_sanitize(get_option('dirAuthLoginScreenMsg'), true);
@@ -561,6 +651,7 @@ ____________EOS;
         $institution    = htmlspecialchars($institution);
         $loginScreenMsg = htmlspecialchars($loginScreenMsg);
         $changePassMsg  = htmlspecialchars($changePassMsg);
+        $strAuthGroups  = htmlspecialchars($strAuthGroups);
         
         if ($enable) {
             $tEnable = "checked";
@@ -586,11 +677,30 @@ ____________EOS;
             $changePassMsg = sprintf(WPDIRAUTH_DEFAULT_CHANGEPASSMSG, $institution);
         }
         
+        /*
         if ($enableSsl) {
             $tSsl = "checked";
         }
         else {
             $fSsl = "checked";
+        }
+        */
+        $strNoSSL ='';
+        $strSSL = '';
+        $strTLS = '';
+        $strOptionSelected = 'selected="selected"';
+        switch($enableSsl){
+            case 1:
+                $strSSL = $strOptionSelected;
+                break;
+            case 2:
+                $strTLS = $strOptionSelected;
+                break;
+            case 0:
+            default:
+                $strNoSSL = $strOptionSelected; 
+                break;
+
         }
         
         if ($requireSsl) {
@@ -643,10 +753,17 @@ ____________EOS;
                         <li>
                             <label for="dirAuthEnableSsl"><strong>Enable SSL Connectivity?</strong></label>
                             <br />
+                            <!--
                             <input type="radio" name="dirAuthEnableSsl" value="1" $tSsl/> Yes &nbsp;
                             <input type="radio" name="dirAuthEnableSsl" value="0" $fSsl/> No
+                            -->
+                            <select id="dirAuthEnableSsl" name="dirAuthEnableSsl">
+                                <option value="0" $strNoSSL>No SSL Connectivity</option>
+                                <option value="1" $strSSL>Use SSL (ldaps)</option>
+                                <option value="2" $strTLS>Use TLS</option>
+                            </select>
                             <br />
-                            <em>Use encryption (SSL, ldaps:// URL) when WordPress connects to the directory server(s)?</em>
+                            <em>Use encryption (TLS, SSL, ldaps:// URL) when WordPress connects to the directory server(s)?</em>
                         </li>
                         <li>
                             <label for="dirAuthControllers"><strong>Directory Servers (Domain Controllers)</strong></label>
@@ -697,6 +814,12 @@ ____________EOS;
                             <br />
                             <input type="password" name="dirAuthPreBindPassCheck" value="" size="40"/><br />
                             <em>Confirm the above Bind Password if you are setting a new value.</em>
+                        </li>
+                        <li>
+                            <label for="dirAuthGroups"><strong>Authentication Groups</strong></label><br />
+                            <input type="text" name="dirAuthGroups" id="dirAuthGroups" size="40" value="$strAuthGroups" /><br />
+                            <em>Enter each group CN that the user must be a member of in order to authenticate.</em> <br />
+                            <strong>NOTE:</strong> Separate multiple CNs by a comma.
                         </li>
                     </ul>
                 </fieldset>
@@ -930,6 +1053,14 @@ ________EOS;
      */
     function wp_authenticate($username, $password)
     {
+        /**
+        * @desc wp-hack for some reason, this function is being called even when a user just goes to the login page. added the next 3 lines so that
+        * if the user arrives via $_GET, then we simply tell them to login
+        */
+        if($_SERVER['REQUEST_METHOD'] != 'POST'){
+            return new WP_Error('incorrect_method',__('<strong>Please Login</strong>'));    
+        }
+        
         if (!$username) {
             return new WP_Error('empty_username', __('<strong>Login Error</strong>:
                         The username field is empty.'));
@@ -1203,6 +1334,9 @@ ________EOS;
 
     }
 
+    function wpDirAuthPrintDebug($mxdVar,$strMsg){
+        echo PHP_EOL,'<!-- ',$strMsg,': ',PHP_EOL,var_export($mxdVar,true),PHP_EOL,'-->',PHP_EOL;
+    }
     
     /**
      * Add custom WordPress actions
