@@ -424,7 +424,7 @@ else {
                 }                
                                
                 
-                $strFilterQuery = '(&'.$filterQuery;
+                $strFilterQuery = '(|'.$filterQuery;
                 foreach($aryAuthGroupsDN as $strAuthGroupDN){
                     $strFilterQuery .= '(memberOf='.$strAuthGroupDN.')';
                 }
