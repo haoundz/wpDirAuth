@@ -2,8 +2,8 @@
 Contributors: stephdau, apokalyptik, gilzow
 Tags: login, authentication, directory, ldap, ldaps
 Requires at least: 2.2
-Tested up to: 3.0-bleeding
-Stable tag: 1.5
+Tested up to: 3.0 Beta 2
+Stable tag: 1.5.1
 
 WordPress directory authentication plugin through LDAP and LDAPS (SSL).
 
@@ -168,6 +168,9 @@ Copyright (c) 2007 [PKR Internet, LLC](http://www.pkrinternet.com/)
 wpDirAuth Patch Contributions
 Copyright (c) 2007 Todd Beverly
 
+wpDirAuth Patch Contributions
+Copyright (c) 2009 Paul Gilzow
+
 wpLDAP: WordPress LDAP Authentication
 Copyright (c) 2007 [Ashay Suresh Manjure](http://ashay.org/)
 
@@ -193,3 +196,8 @@ In other words, a classic case of `pimp my lib'` (hopefully for the better).
 * Current: wpDirAuth: <http://tekartist.org/labs/wordpress/plugins/wpdirauth/>
 * Original: wpLDAP:   <http://ashay.org/?page_id=133>
 * wpLDAP Patch:       <http://www.pkrinternet.com/~rbulling/private/wpLDAP-1.02-ssl.patch>
+
+== Changelog ==
+
+= 1.5.1 = 
+* Remove default password nag for wpdirauth accounts   

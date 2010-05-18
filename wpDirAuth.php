@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.5
+ * @version 1.5.1
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -63,7 +63,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.5
+Version: 1.5.1
 Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
@@ -71,7 +71,7 @@ Author URI: http://stephane.daury.org/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.5');
+define('WPDIRAUTH_VERSION', '1.5.1');
 
 /**
  * wpDirAuth signature.
@@ -1140,7 +1140,7 @@ ________EOS;
                         
                         wp_update_user($userData);
                         update_usermeta($userID, 'wpDirAuthFlag', 1);
-                        
+                        wpDirAuth_remove_password_nag($userID);  
                         return new WP_User($userID);
                     }
                     else {
@@ -1194,6 +1194,7 @@ ________EOS;
                         /*
                          * Directory user, password okay.
                          */
+                        wpDirAuth_remove_password_nag($login->ID); 
                         return new WP_User($login->ID);
                     }
                     else {
@@ -1335,6 +1336,18 @@ ________EOS;
         echo PHP_EOL,'<!-- ',$strMsg,': ',PHP_EOL,var_export($mxdVar,true),PHP_EOL,'-->',PHP_EOL;
     }
     
+    /**
+    * Removes the "you're using a default password nag for dirauth accounts
+    * 
+    * @param integer $userID
+    * @return void
+    */
+    function wpDirAuth_remove_password_nag($userID){
+        if(get_user_option('default_password_nag',$userID)){
+            update_user_option($userID, 'default_password_nag', false, true);
+        }
+    }
+        
     /**
      * Add custom WordPress actions
      * 
