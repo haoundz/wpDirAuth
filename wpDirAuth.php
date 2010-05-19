@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.5.1
+ * @version 1.5.2
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -63,7 +63,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.5.1
+Version: 1.5.2
 Author: Stephane Daury and whoever wants to help
 Author URI: http://stephane.daury.org/
 */
@@ -71,7 +71,7 @@ Author URI: http://stephane.daury.org/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.5.1');
+define('WPDIRAUTH_VERSION', '1.5.2');
 
 /**
  * wpDirAuth signature.
@@ -424,11 +424,11 @@ else {
                 }                
                                
                 
-                $strFilterQuery = '(|'.$filterQuery;
+                $strFilterQuery = '(&'.$filterQuery.'(|';
                 foreach($aryAuthGroupsDN as $strAuthGroupDN){
                     $strFilterQuery .= '(memberOf='.$strAuthGroupDN.')';
                 }
-                $strFilterQuery .= ')';
+                $strFilterQuery .= '))';
                 if(($rscLDAPSearchGroupMember = ldap_search($connection,$baseDn,$strFilterQuery)) !== false){
                     $arySearchResultsMember = ldap_get_entries($connection,$rscLDAPSearchGroupMember);
                     if($arySearchResultsMember['count'] !== 1){
