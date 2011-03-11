@@ -2,8 +2,8 @@
 Contributors: stephdau, apokalyptik, gilzow
 Tags: login, authentication, directory, ldap, ldaps
 Requires at least: 2.2
-Tested up to: 3.0 Beta 2
-Stable tag: 1.5.2
+Tested up to: 3.1
+Stable tag: 1.6.0
 
 WordPress directory authentication plugin through LDAP and LDAPS (SSL).
 
@@ -95,6 +95,11 @@ Once installed and activated, you will be able to administer your directory
 settings through the dedicated plugin configuration tool found under the
 `Directory Auth.` menu found in the WordPress `Options` admin section.
 
+Directory Authenticated users can now be pre-added to your wordpress system
+and granted roles by going to the `Add Dir Auth User` menu found in the 
+Wordpress `Users` admin section. Contextual help for this section is 
+available for this section within Wordpress' built-in help menu.
+
 See the inline help found in the tool for more information on the settings.
 
 There is a secondary activation toggle, so you can install and activate the
@@ -104,13 +109,9 @@ authentication, or even simply turn the feature on or off at any time.
 
 == Help and Support ==
 
-A Google Group has been setup to serve as a centralized support channel.
-
-* <http://groups.google.com/group/wpdirauth-support>
-
-Please ask your questions there, and feel free to  help others out if you're
-already feeling like a wpDirAuth ninja.
-
+Please post questions, request for help to the Wordpress plugins forum or 
+email <wpdirauth@gilzow.com>.  Please be sure to include 'wpdirauth' in the
+subject line.
 
 == Source and Development ==
 
@@ -127,9 +128,8 @@ Unit tests will hopefully be developed and constant security audit performed.
 Recurring quality patch contributions will lead to commit privileges to the
 project source repository.
 
-A Google Group has been setup to serve as a collaboration channel.
-
-* <http://groups.google.com/group/wpdirauth-dev>
+Please post questions/requests for help to the wordpress forums and/or 
+email <wpdirauth@gilzow.com>
 
 The project source code is available on the WordPress Plugin Repository:
 
@@ -168,8 +168,8 @@ Copyright (c) 2007 [PKR Internet, LLC](http://www.pkrinternet.com/)
 wpDirAuth Patch Contributions
 Copyright (c) 2007 Todd Beverly
 
-wpDirAuth Patch Contributions
-Copyright (c) 2010 Paul Gilzow
+wpDirAuth Patch Contributions, New Features
+Copyright (c) 2010, 2011 Paul Gilzow
 
 wpLDAP: WordPress LDAP Authentication
 Copyright (c) 2007 [Ashay Suresh Manjure](http://ashay.org/)
@@ -203,4 +203,7 @@ In other words, a classic case of `pimp my lib'` (hopefully for the better).
 * Remove default password nag for wpdirauth accounts
 
 = 1.5.2 = 
-* Fixed a bug that produced an incorrect filter when using a single Authentication Group   
+* Added ability to limit logins to specific AD groups. Fixed a bug that produced an incorrect filter when using a single Authentication Group 
+
+= 1.6.0 = 
+* Added `Add Dir Auth User` to Admin User menu.  Now able to pre-add Directory Authenticated users and assign roles where previously users would have to log in first, and then have an admin change their role.   

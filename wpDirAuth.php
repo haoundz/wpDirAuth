@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.5.2
+ * @version 1.6.0
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -30,8 +30,8 @@
  * wpDirAuth Patch Contributions
  * Copyright (c) 2007 Todd Beverly
  * 
- * wpDirAuth Patch Contributions
- * Copyright (c) 2010 Paul Gilzow 
+ * wpDirAuth Patch Contribution and current maintainer
+ * Copyright (c) 2010, 2011 Paul Gilzow 
  * 
  * wpLDAP: WordPress LDAP Authentication
  * Copyright (c) 2007 Ashay Suresh Manjure - http://ashay.org/
@@ -63,15 +63,15 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.5.2
-Author: Stephane Daury and whoever wants to help
-Author URI: http://stephane.daury.org/
+Version: 1.6.0
+Author: Stephane Daury, Paul Gilzow and whoever wants to help
+Author URI: http://stephane.daury.org/ http://gilzow.com/
 */
 
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.5.2');
+define('WPDIRAUTH_VERSION', '1.6.0');
 
 /**
  * wpDirAuth signature.
@@ -98,6 +98,12 @@ define('WPDIRAUTH_DEFAULT_CHANGEPASSMSG', 'To change a %s password, please refer
  */
 define('WPDIRAUTH_ALLOWED_TAGS', '<a><strong><em><p><ul><ol><li>');
 
+define('WPDIRAUTH_ERROR_TITLE',__('<strong>Directory Authentication Error</strong>: '));
+
+define('WPDIRAUTH_LDAP_RETURN_KEYS',serialize(array('sn', 'givenname', 'mail')));
+
+define('WPDIRAUTH_EMAIL_NEWUSER_NOTIFY','You have been added to the site %s as %s %s. You may login to the site using your institution\'s %s (%s) and password at the following address: %s');
+
 
 if (function_exists('wp_authenticate') || function_exists('wp_setcookie') || !function_exists('ldap_connect')) {
 /**
@@ -121,8 +127,8 @@ if (function_exists('wp_authenticate') || function_exists('wp_setcookie') || !fu
                 <br />wpDirAuth is now running in safe mode.'
             </p>
             <p>
-				Quote from the <a href="http://php.net/ldap#ldap.installation">PHP manual LDAP section</a>:
-            	<blockquote>
+                Quote from the <a href="http://php.net/ldap#ldap.installation">PHP manual LDAP section</a>:
+                <blockquote>
                      LDAP support in PHP is not enabled by default. You will need to use the
                      --with-ldap[=DIR] configuration option when compiling PHP to enable LDAP
                      support. DIR is the LDAP base install directory. To enable SASL support,
@@ -222,18 +228,90 @@ else {
      * @param object &$connection LDAP connection
      * @param string &$username LDAP username
      * @param string &$password LDAP password
+     * @param string $baseDn
      * @return boolean Binding status
      *      */
-    function wpDirAuth_bindTest(&$connection, &$username, &$password)
+    function wpDirAuth_bindTest(&$connection, &$username, &$password,$baseDn)
     {
-	$password = strtr($password, array("\'"=>"'"));
+    $password = strtr($password, array("\'"=>"'"));
         if ( ($isBound = @ldap_bind($connection, $username, $password)) === false ) {
             // @see wpLDAP comment at http://ashay.org/?page_id=133#comment-558
             $isBound = @ldap_bind($connection,"uid=$username,$baseDn", $password);
         }
         return $isBound;
     }
+    
+    /**
+    * put your comment there...
+    * 
+    * @param string $dc name of domain controller to connect to
+    * @param integer $enableSsl ssl config option
+    * @return resource
+    */
+    function wpDirAuth_establishConnection($dc,$enableSsl){
+        /**
+         * Only setup protocol value if ldaps is required to help with older AD
+         * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/7b744c7ad66a4829
+         */
+        $protocol = ($enableSsl) ? 'ldaps://' : '';
+        
+        /**
+         * Scan for and use alternate server port, but only if ssl is disabled.
+         * @see Parameters constraint at http://ca.php.net/ldap_connect
+         */
+        
+        if (strstr($dc, ':')) list($dc, $port) = explode(':', $dc);
 
+        switch($enableSsl){
+            case 1:
+                $connection = ldap_connect($protocol.$dc);
+                break;
+            case 2:
+            case 0:
+            default:
+                if(isset($port)){
+                    $connection = ldap_connect($dc,$port);
+                } else {
+                    $connection = ldap_connect($dc);
+                }                
+                break;                
+
+        }
+        
+        /**
+         * Copes with W2K3/AD issue.
+         * @see http://bugs.php.net/bug.php?id=30670
+         */
+        if (@ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3)) {
+            @ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
+        }
+        
+        //they want to start TLS
+        if($enableSsl == 2){
+            if(!ldap_start_tls($connection)){
+                return new WP_Error('tls_failed_to_start',__('wpDirAuth error: tls failed to start'));
+            }
+        } 
+        
+        return $connection;       
+    }
+
+    /**
+    * put your comment there...
+    * 
+    * @param array $controllers list of domain controllers to connect to
+    * @return mixed array of shuffled controllers or WP_Error
+    */
+    function wpDirAuth_shuffleControllers($controllers){
+        if (count($controllers) > 1) {
+            // shuffle the domain controllers for pseudo load balancing and fault tolerance.
+            shuffle($controllers);
+        } elseif (count($controllers) == 0) {
+            return new WP_Error('no_controllers',__(' wpDirAuth config error: no domain controllers specified.'));
+        }  
+        
+        return $controllers;      
+    }
     
     /**
      * Custom LDAP authentication module.
@@ -245,13 +323,17 @@ else {
      * @return WP_Error object OR array Directory email, last_name and first_name
      * 
      * @uses WPDIRAUTH_DEFAULT_FILTER
+     * @uses WPDIRAUTH_ERROR_TITLE
      * @uses wpDirAuth_bindTest
+     * @uses wpDirAuth_retrieveUserDetails
+     * @uses wpDirAuth_shuffleControllers
+     * @uses wpDirAuth_establishConnection
      */
     function wpDirAuth_auth($username, $password)
     {
         global $error, $pwd;
         
-        $errorTitle = __('<strong>Directory Login Error</strong>: ');
+        $errorTitle = WPDIRAUTH_ERROR_TITLE;
         
         $controllers      = explode(',', get_option('dirAuthControllers'));
         $baseDn           = get_option('dirAuthBaseDn');
@@ -266,70 +348,29 @@ else {
             $strAuthGroups = get_option('dirAuthGroups');
         }
         
-        $returnKeys = array('sn', 'givenname', 'mail');
+        $returnKeys = unserialize(WPDIRAUTH_LDAP_RETURN_KEYS);
     
         $isBound = $isPreBound = $isLoggedIn = false;
         
-        if (count($controllers) > 1) {
-            // shuffle the domain controllers for pseudo load balancing and fault tolerance.
-            shuffle($controllers);
-        }
-        elseif (count($controllers) == 0) {
-            return new WP_Error('no_controllers', $errorTitle
-                   . __(' wpDirAuth config error: no domain controllers specified.'));
-        }
-        
         if ($accountSuffix) $username .= $accountSuffix;
     
-        /**
-         * Only setup protocol value if ldaps is required to help with older AD
-         * @see http://groups.google.com/group/wpdirauth-support/browse_thread/thread/7b744c7ad66a4829
-         */
-        $protocol = ($enableSsl) ? 'ldaps://' : '';
-        
         if (!$filter) $filter = WPDIRAUTH_DEFAULT_FILTER;
         
         $filterQuery = "($filter=$username)";
         
+        $controllers = wpDirAuth_shuffleControllers($controllers);
+        
+        if(is_wp_error($controllers)){
+            return $controllers;
+        }
+        
         // Connection pool loop - Haha, PooL LooP 
         foreach ($controllers as $dc) {
             
-            /**
-             * Scan for and use alternate server port, but only if ssl is disabled.
-             * @see Parameters constraint at http://ca.php.net/ldap_connect
-             */
+            $connection = wpDirAuth_establishConnection($dc,$enableSsl);
             
-            if (strstr($dc, ':')) list($dc, $port) = explode(':', $dc);
-
-            switch($enableSsl){
-                case 1:
-                    $connection = ldap_connect($protocol.$dc);
-                    break;
-                case 2:
-                case 0:
-                default:
-                    if(isset($port)){
-                        $connection = ldap_connect($dc,$port);
-                    } else {
-                        $connection = ldap_connect($dc);
-                    }                
-                    break;                
-  
-            }
-            
-            /**
-             * Copes with W2K3/AD issue.
-             * @see http://bugs.php.net/bug.php?id=30670
-             */
-            if (@ldap_set_option($connection, LDAP_OPT_PROTOCOL_VERSION, 3)) {
-                @ldap_set_option($connection, LDAP_OPT_REFERRALS, 0);
-            }
-            
-            //they want to start TLS
-            if($enableSsl == 2){
-                if(!ldap_start_tls($connection)){
-                    return new WP_Error('tls_failed_to_start',$errorTitle . __('wpDirAuth error: tls failed to start'));
-                }
+            if(is_wp_error($connection)){
+                return $connection;
             }
             
             if ($preBindUser && $preBindPassword) {
@@ -339,10 +380,10 @@ else {
                  * to login.
                  * @see http://dev.wp-plugins.org/ticket/681
                  */
-                if ( $isPreBound = wpDirAuth_bindTest($connection, $preBindUser, $preBindPassword) === true ) {
+                if ( $isPreBound = wpDirAuth_bindTest($connection, $preBindUser, $preBindPassword,$baseDn) === true ) {
                     if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
                         if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
-                            if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
+                            if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password,$baseDn)) === true ) {
                                 $isLoggedIn = true; // valid server, valid login, move on
                                 break; // valid server, valid login, move on
                             }
@@ -350,7 +391,7 @@ else {
                     }
                 }
             }
-            elseif ( ($isBound = wpDirAuth_bindTest($connection, $username, $password)) === true ) {
+            elseif ( ($isBound = wpDirAuth_bindTest($connection, $username, $password,$baseDn)) === true ) {
                 /**
                  * Use case 2: Servers that will not let you bind anonymously
                  * but will let the end user bind directly.
@@ -369,7 +410,7 @@ else {
                 if ( ($results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys)) !== false ) {
                     if ( ($userDn = @ldap_get_dn($connection, ldap_first_entry($connection, $results))) !== false ) {
                         $isInDirectory = true; // account exists in directory
-                        if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password)) === true ) {
+                        if ( ($isBound = wpDirAuth_bindTest($connection, $userDn, $password,$baseDn)) === true ) {
                             $isLoggedIn = true; // valid server, valid login, move on
                             break; // valid server, valid login, move on
                         }
@@ -382,10 +423,10 @@ else {
             return new WP_Error ('no_directory_or_prebinding', $errorTitle
                    . __(' wpDirAuth config error: No directory server available for authentication, OR pre-binding credentials denied.'));
         }
-	elseif ( ( $isInDirectory ) && ( ! $isBound ) ) {
+    elseif ( ( $isInDirectory ) && ( ! $isBound ) ) {
             return new WP_Error ('could_not_bind_as_user', $errorTitle
                    . __(' Incorrect password.'));
-	}
+    }
         elseif ( ! $isBound && ! $isPreBound ) {
             return new WP_Error ('no_directory_available', $errorTitle
                    . __(' wpDirAuth config error: No directory server available for authentication.'));
@@ -444,46 +485,10 @@ else {
              * Search for profile, if still needed.
              * @see $results in preceding loop: Use case 3
              */
-            if (!$results) $results = @ldap_search($connection, $baseDn, $filterQuery, $returnKeys);
-            
-            if (!$results) {
-                return new WP_Error ('noprofile_search', $errorTitle
-                       . __('Directory authentication initially succeeded, but no
-                             valid profile was found (search procedure).')
-                       ." [$filter]");
-            }
-            else{
-                $userInfo = @ldap_get_entries($connection, $results);
-                
-                $count = intval($userInfo['count']);
-                if ($count < 1) {
-                    return new WP_Error ('noprofile_getentries', $errorTitle
-                           . __('Directory authentication initially succeeded, but no
-                                 valid profile was found ("get entries" procedure).')
-                           ." [$filter]");
-                }
-                elseif ($count > 1) {
-                    return new WP_Error ('not_unique', $errorTitle
-                           . __('Directory authentication initially succeeded, but the
-                                 username you sent is not a unique profile identifier.')
-                           . " [$filter]");
-                }
-                else {
-                    $email     = isset($userInfo[0]['mail'][0])
-                               ? $userInfo[0]['mail'][0] : '';
-                    
-                    $lastName  = isset($userInfo[0]['sn'][0])
-                               ? $userInfo[0]['sn'][0] : '';
-                    
-                    $firstName = isset($userInfo[0]['givenname'][0])
-                               ? $userInfo[0]['givenname'][0] : '';
-        
-                    return array(
-                        'email'      => $email,
-                        'last_name'  => $lastName,
-                        'first_name' => $firstName
-                    );
-                }
+            if (!$results){
+                return wpDirAuth_retrieveUserDetails($connection,$baseDn,$strFilterQuery);        
+            } else {
+                return wpDirAuth_retrieveUserDetails($connection,$baseDn,$strFilterQuery,$results);   
             }
         }
     }
@@ -575,6 +580,7 @@ ____________EOS;
             $filter           = wpDirAuth_sanitize($_POST['dirAuthFilter']);
             $institution      = wpDirAuth_sanitize($_POST['dirAuthInstitution']);
             $strAuthGroups    = wpDirAuth_sanitize($_POST['dirAuthGroups']);
+            $strMarketingSSOID= wpDirAuth_sanitize(($_POST['dirAuthMarketingSSOID']));
 
             if($strAuthGroups != ''){
                 $boolUseGroups = 1;    
@@ -598,6 +604,7 @@ ____________EOS;
             update_option('dirAuthTOS',             $TOS);
             update_option('dirAuthUseGroups',       $boolUseGroups);
             update_option('dirAuthGroups',          $strAuthGroups);
+            update_option('dirAuthMarketingSSOID',  $strMarketingSSOID);
 
             
             // Only store/override the value if a new one is being sent a bind user is set.
@@ -627,13 +634,14 @@ ____________EOS;
             $enableSsl       = intval(get_option('dirAuthEnableSsl',0));
             
             // Strings, no HTML
-            $controllers     = wpDirAuth_sanitize(get_option('dirAuthControllers'));
-            $baseDn          = wpDirAuth_sanitize(get_option('dirAuthBaseDn'));
-            $preBindUser     = wpDirAuth_sanitize(get_option('dirAuthPreBindUser'));
-            $accountSuffix   = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
-            $filter          = wpDirAuth_sanitize(get_option('dirAuthFilter'));
-            $institution     = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
-            $strAuthGroups   = wpDirAuth_sanitize((get_option('dirAuthGroups')));
+            $controllers        = wpDirAuth_sanitize(get_option('dirAuthControllers'));
+            $baseDn             = wpDirAuth_sanitize(get_option('dirAuthBaseDn'));
+            $preBindUser        = wpDirAuth_sanitize(get_option('dirAuthPreBindUser'));
+            $accountSuffix      = wpDirAuth_sanitize(get_option('dirAuthAccountSuffix'));
+            $filter             = wpDirAuth_sanitize(get_option('dirAuthFilter'));
+            $institution        = wpDirAuth_sanitize(get_option('dirAuthInstitution'));
+            $strAuthGroups      = wpDirAuth_sanitize((get_option('dirAuthGroups')));
+            $strMarketingSSOID  = wpDirAuth_sanitize((get_option('dirAuthMarketingSSOID'))); 
             
             // Have to be allowed to contain some HTML
             $loginScreenMsg  = wpDirAuth_sanitize(get_option('dirAuthLoginScreenMsg'), true);
@@ -830,6 +838,14 @@ ____________EOS;
                             <br />
                             <em>Name of your institution/company. Displayed on the login screen.</em>
                         </li>
+                        
+                        <li>
+                            <label for=""><strong>Marketing name for Institutional Single-Sign-On ID</strong></label>
+                            <br />
+                            <input type="text" name="dirAuthMarketingSSOID" value="$strMarketingSSOID" id="dirAuthMarketingSSOID" size="40" />
+                            <br />
+                            <em>How your institution/company refers to the single-sign-on ID you use.</em>
+                        </li>
                         <li>
                             <label for="dirAuthLoginScreenMsg"><strong>Login Screen Message</strong></label>
                             <br />
@@ -867,10 +883,11 @@ ________EOS;
     
 
     /**
-     * Adds the `Directory Auth.` menu entry in the Wordpress Admin section.
+     * Adds the `Directory Auth.` menu entry in the Wordpress Admin section, and the `Add Directory Authenticated User` to the Users menu
      * Also activates the wpDirAuth config panel as a callback function.
      * 
      * @uses wpDirAuth_optionsPanel
+     * @uses wpDirAuth_add_user_panel
      */
     function wpDirAuth_addMenu() 
     {
@@ -882,6 +899,16 @@ ________EOS;
                 basename(__FILE__),
                 'wpDirAuth_optionsPanel'
             );
+        }
+        
+        if(function_exists('add_users_page')){
+            add_users_page(
+                'Add Directory Authentication Users',
+                'Add Dir Auth User',
+                'administrator',
+                basename(__FILE__),
+                'wpDirAuth_add_user_panel'
+            );        
         }
     }
     
@@ -949,8 +976,8 @@ ________EOS;
             ));
             
             echo '
-            	<style>.wpDirAuthMsg a, .wpDirAuthMsg a:visited {color: #ebcd4e;}</style>
-            	<p class="wpDirAuthMsg">'.$loginScreenMsg.'</p>
+                <style>.wpDirAuthMsg a, .wpDirAuthMsg a:visited {color: #ebcd4e;}</style>
+                <p class="wpDirAuthMsg">'.$loginScreenMsg.'</p>
             ';
         }
     }
@@ -1332,12 +1359,18 @@ ________EOS;
 
     }
 
+    /**
+    * Prints data on a variable into a comments block in the source code of a page. Used for debugging purposes only.
+    * 
+    * @param mixed $mxdVar
+    * @param string $strMsg
+    */
     function wpDirAuthPrintDebug($mxdVar,$strMsg){
         echo PHP_EOL,'<!-- ',$strMsg,': ',PHP_EOL,var_export($mxdVar,true),PHP_EOL,'-->',PHP_EOL;
     }
     
     /**
-    * Removes the "you're using a default password nag for dirauth accounts
+    * Removes the "you're using a default password"" nag for dirauth accounts
     * 
     * @param integer $userID
     * @return void
@@ -1347,17 +1380,344 @@ ________EOS;
             update_user_option($userID, 'default_password_nag', false, true);
         }
     }
+    
+    /**
+    * Retrieves values given in WPDIRAUTH_LDAP_RETURN_KEYS from a valid, bound LDAP connection 
+    * 
+    * @param resource $rscConnection verified LDAP connection resource
+    * @param string $strBaseDn
+    * @param string $strFilterQuery
+    * @param mixed $rscReult if LDAP search was already performed. default null
+    * @return mixed WP_Error object if there was an error encountered, otherwise an array of user details
+    * 
+    * @TODO right now it's actually coded such that what is returned is always the same, even if you change the keys in WPDIRAUTH_LDAP_RETURN_KEYS. Rewrite it so 
+    * it will dynamically retrieve the values. idea is that WPDIRAUTH_LDAP_RETURN_KEYS would become an associative array of key names to return => LDAP keys to retrieve.
+    * WPDIRAUTH_LDAP_RETURN_KEYS = serialize(array(
+    *       'first_name'    =>'givenname',
+    *       'last_name'     =>'sn',
+    *       'email'         =>'mail'
+    * ));
+    * of course, we'll need to somehow require at least the email key since we need that one in order to add the user. 
+    */
+    function wpDirAuth_retrieveUserDetails($rscConnection,$strBaseDn,$strFilterQuery,$rscResult=NULL){
+        //now that we have a valid connection and are bound, we need to find the user.
+        
+        if(is_null($rscResult)){
+            $rscResult = ldap_search($rscConnection,$strBaseDn,$strFilterQuery,unserialize(WPDIRAUTH_LDAP_RETURN_KEYS)); 
+        }
+        
+        if(!$rscResult){
+            return new WP_Error ('noprofile_search', __('Directory authentication initially succeeded, but no valid profile was found (search procedure).')
+                   ." [$strFilter]");                
+        } else {
+            $aryUserDetails = @ldap_get_entries($rscConnection, $rscResult);
+            
+            $intCount = intval($aryUserDetails['count']);
+            if ($intCount < 1) {
+                return new WP_Error ('noprofile_getentries', __('Directory authentication initially succeeded, but no valid profile was found ("get entries" procedure).')
+                       ." [$strFilterQuery]");
+            } elseif ($intCount > 1) {
+                return new WP_Error ('not_unique', __('Directory authentication initially succeeded, but the username you sent is not a unique profile identifier.')
+                       . " [$strFilterQuery]");
+            } else {
+                $strEmail       = isset($aryUserDetails[0]['mail'][0]) ? $aryUserDetails[0]['mail'][0] : '';
+                
+                $strLastName    = isset($aryUserDetails[0]['sn'][0]) ? $aryUserDetails[0]['sn'][0] : '';
+                
+                $strFirstName   = isset($aryUserDetails[0]['givenname'][0]) ? $aryUserDetails[0]['givenname'][0] : '';
+    
+                return array(
+                    'email'      => $strEmail,
+                    'last_name'  => $strLastName,
+                    'first_name' => $strFirstName
+                );            
+            }
+         }
+    }
+    
+    /**
+    * Handles connecting to LDAP and performing a search for the given SSOID
+    * 
+    * @param string $strSSOID
+    * @return mixed WP_Error object on failure, array of user details on success
+    * @TODO this function shares a LOT with wpDirAuth_auth. see if you cant combine them some more
+    */
+    function wpDirAuth_ConnectAndLookupUser($strSSOID){
+        $boolFound = false;
+        
+        $strBaseDn           = get_option('dirAuthBaseDn');
+        $strPreBindUser      = get_option('dirAuthPreBindUser','');
+        $strPreBindPassword  = get_option('dirAuthPreBindPassword','');
+        $strAccountSuffix    = get_option('dirAuthAccountSuffix');
+        $strFilter           = get_option('dirAuthFilter');
+        $intEnableSSL        = get_option('dirAuthEnableSsl');        
+        
+        if ($strAccountSuffix) $strSSOID .= $strAccountSuffix;
+    
+        if (!$strFilter || empty($strFilter)) $strFilter = WPDIRAUTH_DEFAULT_FILTER;
+        
+        $strFilterQuery = "($strFilter=$strSSOID)";        
+        
+        $aryControllers = wpDirAuth_shuffleControllers(explode(',', get_option('dirAuthControllers')));
+        
+        if(is_wp_error($aryControllers)){
+            return $aryControllers; //there werent any controllers to connect to
+        }
+        
+        /**
+        * @todo if we get a successful connection, cant we break out of the loop before we go through binding and a search?  Or is it possible that one DC in the 
+        * list might not allow anonymous searching and/or the pre-bind user/pass isnt valid on one of them and we need to try the next in the list?  
+        */
+        foreach($aryControllers as $strDC){
+            $rscConnection = wpDirAuth_establishConnection($strDC,$intEnableSSL);
+            if(is_wp_error($rscConnection)){
+                return $rscConnection;  //tls failed to start on the DC
+            }
+            
+            if(!wpDirAuth_bindTest($rscConnection,$strPreBindUser,$strPreBindPassword,$strBaseDn)){
+                return new WP_Error('login_failed',__('<strong>Error Connecting to LDAP Server</strong><p>'
+                    . 'There was an error connecting to your LDAP server ('.$strDC.'). Please see the LDAP error message below for troubleshooting:</p>'
+                    . ldap_error($rscConnection)));
+            }
+            
+            //successfully bound, now we need to get the user details
+            return wpDirAuth_retrieveUserDetails($rscConnection,$strBaseDn,$strFilterQuery);
+        }
+    }
+    
+    /**
+    * Checks to make sure the user doesnt already exist and that the email associated with a SSOID isnt already in use in the blog, and if not, adds the user.
+    * 
+    * @param string $strSSOID Single Sign On ID
+    * @param string $strRole Role chosen to give the new user
+    * @return mixed array of user details on success or WP_Error object on failure
+    */
+    function wpDirAuth_add_new_user($strSSOID,$strRole){
+        /**
+        * We need to see if the user name already exists.  if not, then we need to see if the email address is already in use, if not, then we need to try and look
+        * up the user.  then if we actually found something, then we'll add them into wordpress    
+        */
+        $strSSOID = sanitize_user($strSSOID);
+        
+        if(username_exists($strSSOID)){
+            echo '<p>user already exists</p>';
+            return new WP_Error('username_exists',__('<p>Could not create a new Wordpress account because the directory username <strong>'
+                            . $strSSOID . '</strong> is already registered on this site.'));   
+        }
+        
+        //we'll have to go ahead and look them up in LDAP in order to check their email address
+        $aryUserDetails = wpDirAuth_ConnectAndLookupUser($strSSOID);
+        if(is_wp_error($aryUserDetails)){
+            return $aryUserDetails;
+        } 
+        $strUserEmail = apply_filters('user_registration_email', $aryUserDetails['email']);
+                 
+        if(email_exists($strUserEmail)){
+            echo '<p>Email address already exists</p>';
+            return new WP_Error('email_exists',__('Could not create a new WP account because the email <strong>' 
+                . $strUserEmail . '</strong> is already registered with this site.'));
+        }
+        
+        $aryUserDetails['user_pass'] = mt_rand();//we're going to store a random password in WP since directory users will never use it to log in anyway'
+        $aryUserDetails['user_login'] = $strSSOID;
+        $aryUserDetails['user_email'] = $aryUserDetails['email'] = $strUserEmail;
+        /**
+        * @TODO ask Stephen why he's replacing .'s with _'s in the user name of the email address. Does nickname not allow spaces?
+        */
+        $tmpAr = split('@',$aryUserDetails['email']);
+        $aryUserDetails['nickname'] =  str_replace('.','_',$tmpAr[0]);
+        $aryUserDetails['display_name'] = $aryUserDetails['first_name'].' '.$aryUserDetails['last_name'];
+        $aryUserDetails['role'] = $strRole;        
+        
+        $intUserID = wp_update_user($aryUserDetails);
+        
+        if(!is_int($intUserID)){
+            return new WP_Error('createuser_failed',__('For an unknow reason, WP failed to create a new user.'
+                .' Failure occurred at line ' . __LINE__ . ' in the function ' . __FUNCTION__ . ' in the file ' . basename(__FILE__) . '.'));
+        }
+        
+        $aryUserDetails['ID'] = $intUserID;
+        update_usermeta($intUserID, 'wpDirAuthFlag', 1);
+        wpDirAuth_remove_password_nag($intUserID);  
+        
+        return $aryUserDetails;        
+    }
+    
+    /**
+    * Loops through the WP_Error object and prints out the error messages it contains
+    * 
+    * @param object $objError
+    * @return void
+    */
+    function wpDirAuth_print_error_messages($objError){
+        echo PHP_EOL,'<div class="error">',WPDIRAUTH_ERROR_TITLE,'<ul>',PHP_EOL;
+        foreach($objError->get_error_messages() as $strErrMsg){
+            echo '<li>',$strErrMsg,'</li>',PHP_EOL;
+        }
+        echo '</ul></div>',PHP_EOL;
+    }
+    
+    /**
+    * Constructs the message to be displayed when a new user has been added successfully
+    * 
+    * @param string $strSSOID User's Single Sign On ID
+    * @param integer $strUserID user's wordpress user ID
+    * @param string $strRole the role the user has been set to
+    * @return string
+    * @uses wpDirAuth_determine_A_or_An
+    * 
+    */
+    function wpDirAuth_construct_success_msg($strSSOID,$strUserID,$strRole){
+        $strMsg = '<div id="message" class="updated"><p>Just created user <strong><a href="user-edit.php?user_id=%d">%s</a></strong> as %s <strong>%s</strong>.</p></div>';
+        return sprintf($strMsg,$strUserID,$strSSOID,wpDirAuth_determine_A_or_An($strRole),$strRole);
+    }
+    
+    /**
+    * Just determines if the word $strWord should be prefaced with 'a' or 'an'.
+    * Yea, i know it's picky, but I work with editors who complain about this type of stuff all the time  =P
+    * 
+    * @param string $strWord
+    * @return string 
+    */
+    function wpDirAuth_determine_A_or_An($strWord){
+        $strAorAn = 'a';
+        if(in_array(substr($strWord,0,1),array('a','e','i','o','u'))){
+            $strAorAn .= 'n';
+        }
+        
+        return $strAorAn;        
+    }
+    
+    /**
+    * Adds contextual help to the Add Dir Auth page under the Users menu
+    * 
+    */
+    function wpDirAuth_add_user_contextual_help(){
+        $strMarketingSSOID = get_option('dirAuthMarketingSSOID','Username');
+        add_contextual_help('users_page_'.basename(__FILE__,'.php'),
+            '<p>' . __('To add a directory authenticated user from your institution to your site, fill in the form on this screen. If you&#8217;re not sure which role to assign, you can use the link below to review the different roles and their capabilities. Here is a basic overview of roles:') . '</p>' .
+            '<ul>' .
+                '<li>' . __('Administrators have access to all the administration features.') . '</li>' .
+                '<li>' . __('Editors can publish posts, manage posts as well as manage other people&#8217;s posts, etc.')  . '</li>' .
+                '<li>' . __('Authors can publish and manage their own posts.') . '</li>' .
+                '<li>' . __('Contributors can write and manage their posts but not publish posts or upload media files.') . '</li>' .
+                '<li>' . __('Subscribers can read comments/comment/receive newsletters, etc.') . '</li>' .
+            '</ul>' .
+            '<p>' . __('The user\'s insitutional single-sign-on ID (e.g. ' . $strMarketingSSOID .') will become the user\'s Wordpress username.') . '</p>' .
+            '<p>' . __('New users will receive an email letting them know they&#8217;ve been added as a user for your site.') . '</p>' .
+            '<p>' . __('Remember to click the Add User button at the bottom of this screen when you are finished.') . '</p>' .
+            '<p><strong>' . __('For more information:') . '</strong></p>' .
+            '<p>' . __('<a href="http://wordpress.org/support/" target="_blank">Support Forums</a>') . '</p>'
+        );        
+    }
+    
+    /**
+    * Processes and outputs the Add Dir Auth user form.
+    * @return void
+    */
+    function wpDirAuth_add_user_panel(){
+        $strMarketingSSOID = get_option('dirAuthMarketingSSOID','Username');
+        /**
+        * defaults
+        */
+        $strWpDirAuthSSOID = '';
+        $strWpDirAuthRole = '';
+        $boolConfirmationEmail = true;
+        $mxdErrors = '';
+        $strSuccess = '';
+        
+        if($_POST){
+            if(wp_verify_nonce($_POST['_wpnonce_add-da-user'],'add-da-user')){
+                if(isset($_POST['ssoid']) && $_POST['ssoid'] == ''){
+                    $mxdErrors = new WP_Error('blank_ssoid',__('<p>'.$strMarketingSSOID.' can not be left blank.</p>'));
+                } else {
+                    $strWpDirAuthSSOID = wpDirAuth_sanitize($_POST['ssoid']);
+                    $strWpDirAuthRole = in_array($_POST['role'],array_keys(get_editable_roles())) ? $_POST['role'] : get_option('default_role');
+                    if(isset($_POST['noconfirmation']) && $_POST['noconfirmation'] == 1) $boolConfirmationEmail = false;
+                                        
+                    $aryUserData = wpDirAuth_add_new_user($strWpDirAuthSSOID,$strWpDirAuthRole);
+                    if(is_wp_error($aryUserData)){
+                        $mxdErrors = $aryUserData;
+                    } else {
+                        $strSuccess = wpDirAuth_construct_success_msg($strWpDirAuthSSOID,$aryUserData['ID'],$strWpDirAuthRole); 
+                        
+                        if($boolConfirmationEmail){
+                            $strBlogName = get_option('blogname');
+                            $strMsg = sprintf(WPDIRAUTH_EMAIL_NEWUSER_NOTIFY,$strBlogName,wpDirAuth_determine_A_or_An($strWpDirAuthRole),$strWpDirAuthRole,$strMarketingSSOID,$strWpDirAuthSSOID,site_url().'/wp-login.php');
+                            wp_mail($aryUserData['email'],'['.$strBlogName.'] You\'ve been added!',$strMsg);
+                        } 
+                        
+                        //reset back to defaults
+                        $strWpDirAuthSSOID = '';
+                        $strWpDirAuthRole = '';
+                        $boolConfirmationEmail = true;
+                    }
+                } 
+            } else {
+                $mxdErrors = new WP_Error('invalid-nonce',__('Invalid nonce value'));
+            }
+         }
+
+?>
+        <h3>Add New Directory Authentication User</h3>
+<?php 
+    if($mxdErrors != '') {
+        wpDirAuth_print_error_messages($mxdErrors);
+    } elseif($strSuccess != ''){
+        echo $strSuccess;
+    } 
+?>
+        <p><?php _e('Add a directory authenticated user to this site/network'); ?></p>
+        <p><?php _e('Please note: Your LDAP/AD instance must allow anonymous profile searches, or you must provide a pre-bind account/password in the <a href="options-general.php?page='.basename(__FILE__).'">Directory Auth settings page.</a>') ?></p>
+    
+        <form action="" method="post" name="adddauser" id="createuser" class="add:users: validate"<?php do_action('user_new_form_tag');?>>
+        <input name="action" type="hidden" value="add-da-user" />
+        <?php wp_nonce_field( 'add-da-user', '_wpnonce_add-da-user' ); ?>
+        <table class="form-table">
+            <tr class="form-field form-required">
+                <th scope="row">
+                    <label for="ssoid"><?php _e($strMarketingSSOID.'/SSOID'); ?> <span class="description"><?php _e('(required)'); ?></span></label>
+                </th>
+                <td>
+                    <input name="ssoid" type="text" id="ssoid" value="<?php echo esc_attr($strWpDirAuthSSOID); ?>" aria-required="true" />
+                </td>
+            </tr>
+            <tr class="form-field">
+                <th scope="row"><label for="role"><?php _e('Role'); ?></label></th>
+                <td><select name="role" id="role">
+                    <?php
+                    $strCurrentRole = empty($strWpDirAuthRole) ? get_option('default_role') : $strWpDirAuthRole;
+                    wp_dropdown_roles($strCurrentRole);
+                    ?>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="noconfirmation"><?php _e('Skip Confirmation Email') ?></label></th>
+                <td><label for="noconfirmation"><input type="checkbox" name="noconfirmation" id="noconfirmation" value="1"  <?php checked(!$boolConfirmationEmail); ?> /> <?php _e( 'Add the user without sending them a confirmation email.' ); ?></label></td>
+            </tr>
+        </table>
+
+        <?php submit_button( __( 'Add New User '), 'primary', 'createuser', true, array( 'id' => 'createusersub' ) ); ?>
+
+        </form>                                            
+<?php
+    } // end  wpDirAuth_add_user_panel() function
         
     /**
      * Add custom WordPress actions
      * 
      * @uses wpDirAuth_addMenu
      * @uses wpDirAuth_loginFormExtra
+     * @uses wpDirAuth_profileUpdate
+     * @uses wpDirAuth_add_user_contextual_help
      */
     if (function_exists('add_action')) {
         add_action('admin_menu',     'wpDirAuth_addMenu');
         add_action('login_form',     'wpDirAuth_loginFormExtra');
         add_action('profile_update', 'wpDirAuth_profileUpdate');
+        
+        add_action('admin_head-users_page_'.basename(__FILE__,'.php'),'wpDirAuth_add_user_contextual_help');
     }
     
     
@@ -1369,6 +1729,7 @@ ________EOS;
     if (function_exists('add_filter')) {
         add_filter('show_password_fields', 'wpDirAuth_hidePassFields');
     }
+    
 }
 
 ?>

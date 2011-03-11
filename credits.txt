@@ -7,6 +7,11 @@ wpDirAuth is made possible by the following contributors:
     Montreal, QC, Canada
     http://stephane.daury.org/
 
+  Paul Gilzow
+    Current maintainer
+    Columbia, MO, USA
+    http://profiles.wordpress.org/users/gilzow/
+
   Todd Beverly
     wpDirAuth QA and patch contributor
     Rochester, NY, USA
