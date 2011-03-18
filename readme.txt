@@ -3,7 +3,7 @@ Contributors: stephdau, apokalyptik, gilzow
 Tags: login, authentication, directory, ldap, ldaps
 Requires at least: 2.2
 Tested up to: 3.1
-Stable tag: 1.6.0
+Stable tag: 1.6.1
 
 WordPress directory authentication plugin through LDAP and LDAPS (SSL).
 
@@ -113,6 +113,9 @@ Please post questions, request for help to the Wordpress plugins forum or
 email <wpdirauth@gilzow.com>.  Please be sure to include 'wpdirauth' in the
 subject line.
 
+== TO-DO's ==
+
+
 == Source and Development ==
 
 wpDirAuth welcomes friendly contributors wanting to lend a hand, be it in
@@ -207,3 +210,6 @@ In other words, a classic case of `pimp my lib'` (hopefully for the better).
 
 = 1.6.0 = 
 * Added `Add Dir Auth User` to Admin User menu.  Now able to pre-add Directory Authenticated users and assign roles where previously users would have to log in first, and then have an admin change their role.   
+
+= 1.6.1 = 
+* Corrected a bug that would prevent user profiles from successfully being found. Thanks go to jgiangrande for identifying the problem area.

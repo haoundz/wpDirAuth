@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.6.0
+ * @version 1.6.1
  * @see http://tekartist.org/labs/wordpress/plugins/wpdirauth/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -71,7 +71,7 @@ Author URI: http://stephane.daury.org/ http://gilzow.com/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.6.0');
+define('WPDIRAUTH_VERSION', '1.6.1');
 
 /**
  * wpDirAuth signature.
@@ -331,7 +331,7 @@ else {
      */
     function wpDirAuth_auth($username, $password)
     {
-        global $error, $pwd;
+        global $error, $pwd;  
         
         $errorTitle = WPDIRAUTH_ERROR_TITLE;
         
@@ -486,9 +486,9 @@ else {
              * @see $results in preceding loop: Use case 3
              */
             if (!$results){
-                return wpDirAuth_retrieveUserDetails($connection,$baseDn,$strFilterQuery);        
+                return wpDirAuth_retrieveUserDetails($connection,$baseDn,$filterQuery);        
             } else {
-                return wpDirAuth_retrieveUserDetails($connection,$baseDn,$strFilterQuery,$results);   
+                return wpDirAuth_retrieveUserDetails($connection,$baseDn,$filterQuery,$results);   
             }
         }
     }
