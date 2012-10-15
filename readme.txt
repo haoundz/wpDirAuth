@@ -208,6 +208,8 @@ In other words, a classic case of `pimp my lib'` (hopefully for the better).
 
 == Changelog ==
 
+PLEASE NOTE Beta testers of the 1.7.X branch prior to version 1.7.5, you will need to deactivate wpdirauth before you updgrade to this latest version. Once you have installed and network activated the plugin, it will copy your options from their previous location to the sitemeta table. You will only need to do this once. This will also work for anyone who was using the 1.6.X branch or older and plans on using it in MULTISITE mode.
+
 = 1.5.1 = 
 * Remove default password nag for wpdirauth accounts
 
