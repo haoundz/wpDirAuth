@@ -15,7 +15,7 @@
  * Originally forked from a patched version of wpLDAP.
  * 
  * @package wpDirAuth
- * @version 1.7.5
+ * @version 1.7.6
  * @see http://wpdirauth.gilzow.com/
  * @license GPL <http://www.gnu.org/licenses/gpl.html>
  * 
@@ -63,7 +63,7 @@ Description: WordPress Directory Authentication (LDAP/LDAPS).
              Apache Directory, Microsoft Active Directory, Novell eDirectory,
              Sun Java System Directory Server, etc.
              Originally revived and upgraded from a patched version of wpLDAP.
-Version: 1.7.5
+Version: 1.7.6
 Author: Paul Gilzow
 Author URI: http://gilzow.com/
 */
@@ -71,7 +71,7 @@ Author URI: http://gilzow.com/
 /**
  * wpDirAuth version.
  */
-define('WPDIRAUTH_VERSION', '1.7.5');
+define('WPDIRAUTH_VERSION', '1.7.6');
 
 /**
  * wpDirAuth signature.
@@ -1098,8 +1098,10 @@ ________EOS;
     {
         //echo 'authenticating';exit;
         $boolRestoreBlog = false;
-        if(defined('WP_ALLOW_MULTISITE') && WP_ALLOW_MULTISITE && function_exists('switch_to_blog')){
+        if(defined('WPDIRAUTH_MULTISITE') && WPDIRAUTH_MULTISITE){
             //echo 'I should switch blogs!';exit;
+            global $blog_id;
+            $intOriginalBlog = $blog_id;
             switch_to_blog(1); //switch to the parent blog
             $boolRestoreBlog = true;    
         }
@@ -1190,28 +1192,34 @@ ________EOS;
                                     the email <strong>' . htmlentities($userEmail,ENT_QUOTES,'UTF-8') . '</strong> is
                                     already registered with this site.'));
                     }
-                    elseif ($userID = wp_create_user($userLogin, $password, $userEmail)) {
-                        $userData['ID'] = $userID;
-                        $tmpAr = split('@',$userData['email']);
-                        $userData['nickname'] =  str_replace('.','_',$tmpAr[0]);
-                        $userData['display_name'] = $userData['first_name'].' '.$userData['last_name'];
-                        unset($userData['email']);
-                        
-                        wp_update_user($userData);
-                        update_usermeta($userID, 'wpDirAuthFlag', 1);
-                        wpDirAuth_remove_password_nag($userID);  
-                        if($boolRestoreBlog) restore_current_blog();
-                        return new WP_User($userID);
-                    }
                     else {
-                        /*
-                         * Unknown error.
-                         */
-                        if($boolRestoreBlog) restore_current_blog();
-                        do_action( 'wp_login_failed', $username );
-                        return new WP_Error('creation_unknown_error',__('<strong>Directory Login Error</strong>:
-                                    Could not create a new user account.
-                                    Unknown error. [user: ' . htmlentities($userLogin,ENT_QUOTES,'UTF-8') . ', email: ' . htmlentities($userEmail,ENT_QUOTES,'UTF-8') . ']'));
+                        if(defined('WPDIRAUTH_MULTISITE') && WPDIRAUTH_MULTISITE && isset($boolRestoreBlog) && $boolRestoreBlog){
+                            restore_current_blog();
+                        }    
+                        
+                        if ($userID = wp_create_user($userLogin, $password, $userEmail)) {
+                                $userData['ID'] = $userID;
+                                $tmpAr = split('@',$userData['email']);
+                                $userData['nickname'] =  str_replace('.','_',$tmpAr[0]);
+                                $userData['display_name'] = $userData['first_name'].' '.$userData['last_name'];
+                                unset($userData['email']);
+
+                                wp_update_user($userData);
+                                update_usermeta($userID, 'wpDirAuthFlag', 1);
+                                wpDirAuth_remove_password_nag($userID);  
+                                //if($boolRestoreBlog) restore_current_blog();
+                                return new WP_User($userID);
+                            }
+                            else {
+                                /*
+                                * Unknown error.
+                                */
+                                //if($boolRestoreBlog) restore_current_blog();
+                                do_action( 'wp_login_failed', $username );
+                                return new WP_Error('creation_unknown_error',__('<strong>Directory Login Error</strong>:
+                                            Could not create a new user account.
+                                            Unknown error. [user: ' . htmlentities($userLogin,ENT_QUOTES,'UTF-8') . ', email: ' . htmlentities($userEmail,ENT_QUOTES,'UTF-8') . ']'));
+                            }                        
                     }
                 }
                 else {
