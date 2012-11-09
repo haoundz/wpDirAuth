@@ -480,7 +480,6 @@ else {
                     $strAuthGroup = 'cn='.$strAuthGroup;
                     $rscLDAPSearch = ldap_search($connection,$baseDn,$strAuthGroup,$aryAttribs);
                     $arySearchResults = ldap_get_entries($connection,$rscLDAPSearch);
-                    wpDirAuthPrintDebug($arySearchResults,'search results for ' . $strAuthGroup);
                     if(isset($arySearchResults[0]['dn'])){
                         $aryAuthGroupsDN[] = $arySearchResults[0]['dn'];    
                     }    
@@ -1860,9 +1859,7 @@ ________EOS;
     } elseif($strSuccess != ''){
         echo $strSuccess;
     } 
-?>      <p>Refer is <?php echo $strReferer; ?></p>
-        <p>Current Screen is <?php echo(get_current_screen()->id);?></p>
-        <p><?php _e('Add a directory authenticated user to this site/network'); ?></p>
+?>      <p><?php _e('Add a directory authenticated user to this site/network'); ?></p>
         <p><?php _e('Please note: Your LDAP/AD instance must allow anonymous profile searches, or you must provide a pre-bind account/password in the <a href="options-general.php?page='.basename(__FILE__).'">Directory Auth settings page.</a>') ?></p>
     
         <form action="<?php if(isset($strScreenID) && $strScreenID == 'site-users-network') echo 'users.php?page=wpDirAuth'; ?>" method="post" name="adddauser" id="createuser" class="add:users: validate"<?php do_action('user_new_form_tag');?>>
@@ -2120,20 +2117,54 @@ if(!function_exists('_log')){
   * @param mixed $message
   */
   function _log( $message, $boolBackTraced = false ) {
+      _wpdirauth_log($message,null,$boolBackTraced);
+  }
+}
+
+if(!function_exists('_wpdirauth_log')){
+  /**
+  * For logging debug messages into the debug log.
+  * 
+  * @param mixed $mxdVariable variable we need to debug
+  * @param $strPrependMessage message to include
+  * @param boolean $boolBackTraced
+  * @param array $aryDetails details for doing a mini backtrace instead of the full thing
+  * 
+  */
+  function _wpdirauth_log( $mxdVariable, $strPrependMessage = null, $boolBackTraced = false, $aryDetails = array() ) {
     $boolBackTrace = false;
     if( WP_DEBUG === true ){
-      $strMessage = 'WPDIRAUTH ';
-      if( is_array( $message ) || is_object( $message ) ){
-         $strMessage .= var_export($message,true);
-      } else {
-        $strMessage .= $message;
+      $strMessage = 'WPDIRAUTH: ';
+      
+      if(count($aryDetails) > 0){
+          if(isset($aryDetails['line'])){
+              $strMessage .= 'At line number ' . $aryDetails['line'] . ' ';
+          }
+          
+          if(isset($aryDetails['func'])){
+              $strMessage .= 'inside of function ' . $aryDetails['func'] . ' ';
+          }
+          
+          if(isset($aryDetails['file'])){
+              $strMessage .= 'in file ' . $aryDetails['file'] .' ';
+          }
+          
+          $strMessage .= PHP_EOL;
       }
       
-      if($boolBackTrace && $boolBackTraced) {
+      if(!is_null($strPrependMessage)) $strMessage .= $strPrependMessage.' ';
+      
+      if( is_array( $mxdVariable ) || is_object( $mxdVariable ) ){
+         $strMessage .= PHP_EOL . var_export($mxdVariable,true);
+      } else {
+        $strMessage .= $mxdVariable;
+      }
+      
+      if($boolBackTrace && $boolBackTraced){
           $aryBackTrace = debug_backtrace();
           
           $strMessage .= PHP_EOL.'Contents of backtrace:'.PHP_EOL.var_export($aryBackTrace,true).PHP_EOL;          
-      }      
+      }
       
       error_log($strMessage);
     }
