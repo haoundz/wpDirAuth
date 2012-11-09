@@ -1,9 +1,9 @@
 === wpDirAuth ===
-Contributors: stephdau, apokalyptik, gilzow
+Contributors: gilzow, stephdau, apokalyptik
 Tags: login, authentication, directory, ldap, ldaps
 Requires at least: 2.2
 Tested up to: 3.4.2
-Stable tag: 1.7.5
+Stable tag: 1.7.6
 
 WordPress directory authentication plugin through LDAP and LDAPS (SSL).
 
@@ -210,17 +210,20 @@ In other words, a classic case of `pimp my lib'` (hopefully for the better).
 
 PLEASE NOTE Beta testers of the 1.7.X branch prior to version 1.7.5, you will need to deactivate wpdirauth before you updgrade to this latest version. Once you have installed and network activated the plugin, it will copy your options from their previous location to the sitemeta table. You will only need to do this once. This will also work for anyone who was using the 1.6.X branch or older and plans on using it in MULTISITE mode.
 
-= 1.5.1 = 
-* Remove default password nag for wpdirauth accounts
+= 1.7.6 =
+Corrected situation where a new authenticated user logging into a child site in a multisite network was added to the parent site, instead of the child site where they initiated the login. Also, somewhere along the way, I reintroduced a bug that when using authentication groups, the plugin would fail to redirect a successfully logged in user.
 
-= 1.5.2 = 
-* Added ability to limit logins to specific AD groups. Fixed a bug that produced an incorrect filter when using a single Authentication Group 
-
-= 1.6.0 = 
-* Added `Add Dir Auth User` to Admin User menu.  Now able to pre-add Directory Authenticated users and assign roles where previously users would have to log in first, and then have an admin change their role.   
+= 1.7.5 =
+* MULTISITE support, bug fixes, security enhancements
 
 = 1.6.1 = 
 * Corrected a bug that would prevent user profiles from successfully being found. Thanks go to jgiangrande for identifying the problem area.
 
-= 1.7.5 =
-* MULTISITE support, bug fixes, security enhancements
+= 1.6.0 = 
+* Added `Add Dir Auth User` to Admin User menu.  Now able to pre-add Directory Authenticated users and assign roles where previously users would have to log in first, and then have an admin change their role.   
+
+= 1.5.2 = 
+* Added ability to limit logins to specific AD groups. Fixed a bug that produced an incorrect filter when using a single Authentication Group 
+
+= 1.5.1 = 
+* Remove default password nag for wpdirauth accounts
