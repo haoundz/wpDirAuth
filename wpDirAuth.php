@@ -362,7 +362,8 @@ else {
         $errorTitle = WPDIRAUTH_ERROR_TITLE;
         
         $controllers      = explode(',', get_site_option('dirAuthControllers'));
-        $baseDn           = get_site_option('dirAuthBaseDn');
+		//base dn array 
+        $baseDn           =  explode(';', get_site_option('dirAuthBaseDn'));// $baseDn = get_site_option('dirAuthBaseDn');
         $preBindUser      = get_site_option('dirAuthPreBindUser');
         $preBindPassword  = get_site_option('dirAuthPreBindPassword');
         $accountSuffix    = get_site_option('dirAuthAccountSuffix');
@@ -823,7 +824,8 @@ ____________EOS;
                             <label for="dirAuthBaseDn"><strong>Base DN</strong></label>
                             <br />
                             <input type="text" name="dirAuthBaseDn" value="$baseDn" size="40"/><br />
-                            <em>The base DN for carrying out LDAP searches.</em>
+                            <em>The base DN for carrying out LDAP searches.</em><br />
+							<strong>NOTE:</strong> Separate multiple entries by a semicolon (eg: o=basedn1;o=basedn2).
                         </li>
                         <li>
                             <label for="dirAuthPreBindUser"><strong>Bind DN</strong></label>
